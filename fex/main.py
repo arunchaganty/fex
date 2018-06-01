@@ -10,8 +10,8 @@ import json
 import shutil
 import logging
 from collections import defaultdict
+import webbrowser
 
-import bottle
 from bottle import Bottle, jinja2_view, redirect
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,6 @@ def serve(data, template=None):
     app = Bottle()
     @jinja2_view(TEMPLATE_PATH)
     def view():
-        # TODO: other things
         return {'data_len': len(data)}
 
     @jinja2_view(template)
@@ -60,7 +59,8 @@ def serve(data, template=None):
 
     app.route('/_/<idx:int>', 'GET', render)
     app.route('/', 'GET', view)
-    bottle.run(app, reloader=True)
+    webbrowser.open_new_tab('http://localhost:8080')
+    app.run(reloader=True)
 
 def do_view(args):
     # 0. Find experiment dir.

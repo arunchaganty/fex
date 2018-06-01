@@ -4,9 +4,8 @@ fex - a simple, fast data explorer
 Ever have a pile of data (stored as JSON objects) that you want to
 quickly visualize and scroll through?
 Here's a simple package that will let you do just that.
-It takes as input your data (``data.jsonl``), a file where every line is a
-JSON object, and (optionally) a ``template.html`` file that specifies how
-to render that single object.
+Fex just needs your data and (optionally) an HTML template file that
+specifies how to render that single object.
 
 Installation
 ------------
@@ -49,14 +48,13 @@ produces the following result:
 
 Nice!
 
-Notice the navbar at the top that will allow you to quickly toggle
-through input.
+Notice the navbar at the top allows you to quickly toggle through input.
 
 Frequently asked questions
 --------------------------
 
-- *Q*: Can I use paths that are not ``data.jsonl`` or ``template.html``?
-- *A*: Yes! Use the options ``-i`` or ``--input`` to specify the data file
-  and ``-t`` or ``--template`` to specify the template file: ``fex view -i
-  mydata.jsonl -t mytemplate.html``.
+- **Q**: Can I use paths that are not ``data.jsonl`` or ``template.html``?
+    - **A**: Yes! Use the options ``-i`` or ``--input`` to specify the data file
+      and ``-t`` or ``--template`` to specify the template file: ``fex view -i
+      mydata.jsonl -t mytemplate.html``.
 

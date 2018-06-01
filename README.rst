@@ -24,15 +24,15 @@ Usage
 -----
 
 Fex assumes that your data is formatted as `.jsonl`: each line is simply its own JSON object.
-For example, consider the following data (also in `example/data.jsonl`):
+For example, consider the following `data <example/data.jsonl>`_.
 
 ::
 
-  {"id": 0, "title": "Test 1", "messages": [{"user": "A", "msg": "Hi"}, {"user": "B", "msg": "Hello! How's it going?"}, {"user": "A", "msg": "Good!"},]}
-  {"id": 1, "title": "Test 2", "messages": [{"user": "A", "msg": "Hi"}, {"user": "B", "msg": "Hello! How's it going?"}, {"user": "A", "msg": "Good!"},]}
+  {"id": 0, "title": "Test 1", "messages": [{"user": "A", "msg": "Hi"}, {"user": "B", "msg": "Hello! How's it going?"}, {"user": "A", "msg": "Good!"}]}
+  {"id": 1, "title": "Test 2", "messages": [{"user": "B", "msg": "I need help!"}, {"user": "A", "msg": "Uh oh! What happened?"}, {"user": "B", "msg": "Sorry, false alarm, everything is ok."}]}
 
 Running `fex view` will launch a web server that visualizes each of
-these objects using a template rendered with [Jinja](http://jinja.pocoo.org/).
+these objects using a template rendered with `Jinja <http://jinja.pocoo.org/>`_.
 `fex` provides a default visualization is already prettier than staring
 at JSON:
 
@@ -42,7 +42,7 @@ The real power of `fex` comes from being able to quickly hack a template
 that you find more useful. For example, the above data represents a chat
 transcript and it would be much nicer to visualize it as such.
 To do so, first run `fex init`, which will copy over a `template.html`
-file that you can edit. Using the template in `example/template.html`
+file that you can edit. Using the `example template <example/template.html>`_
 produces the following result: 
 
 .. image:: example/with_template.png

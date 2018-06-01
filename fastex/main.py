@@ -37,7 +37,7 @@ def do_init(args):
     template_path = os.path.join(os.path.dirname(__file__), "template.html")
     shutil.copy(template_path, args.template)
 
-def serve(data, template=None):
+def serve(data, template=None, port=8080):
     TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "view.html")
     if not template or not os.path.exists(template):
         template = os.path.join(os.path.dirname(__file__), "template.html")
@@ -59,14 +59,14 @@ def serve(data, template=None):
 
     app.route('/_/<idx:int>', 'GET', render)
     app.route('/', 'GET', view)
-    webbrowser.open_new_tab('http://localhost:8080')
-    app.run(reloader=True)
+    webbrowser.open_new_tab('http://localhost:{}'.format(port))
+    app.run(reloader=True, port=port)
 
 def do_view(args):
     # 0. Find experiment dir.
     data = load_jsonl(args.input)
     logger.info("Serving %d inputs ", len(data))
-    serve(data, args.template)
+    serve(data, args.template, args.port)
 
 def main():
     logging.basicConfig(level=logging.INFO)
@@ -84,6 +84,7 @@ def main():
     command_parser = subparsers.add_parser('view', help='View an experiment')
     command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
+    command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
     command_parser.set_defaults(func=do_view)
 
     args = parser.parse_args()

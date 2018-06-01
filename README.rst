@@ -58,3 +58,7 @@ Frequently asked questions
       and ``-t`` or ``--template`` to specify the template file: ``fex view -i
       mydata.jsonl -t mytemplate.html``.
 
+- **Q**: Can I use a custom port?
+    - **A**: Yes! Use the options ``-p`` or ``--port``: ``fex view -p
+      9000``.
+

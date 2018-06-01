@@ -16,8 +16,8 @@ Installation
     git clone https://github.com/arunchaganty/fex
     pip install -e .
     
-    # OR from PIP (upcoming)
-    pip install fex
+    # OR from PIP
+    pip install fastex
 
 Usage
 -----

@@ -13,6 +13,7 @@ from collections import defaultdict
 import webbrowser
 
 from bottle import Bottle, jinja2_view, redirect
+from jinja2 import Template
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,22 @@ def do_view(args):
     logger.info("Serving %d inputs ", len(data))
     serve(data, args.template, args.port)
 
+def do_save(args):
+    # 0. Find experiment dir.
+    data = load_jsonl(args.input)
+    logger.info("Saving %d inputs ", len(data))
+    with open(args.template) as f:
+        template = Template(f.read())
+
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+    elif not os.path.isdir(args.output):
+        raise RuntimeError("Expected {} to be directory but it is not".format(args.output))
+
+    for i, obj in enumerate(data):
+        with open(os.path.join(args.output, "{}.html".format(i)), "w") as f:
+            f.write(template.render(obj=obj))
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -86,6 +103,13 @@ def main():
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
     command_parser.set_defaults(func=do_view)
+
+    command_parser = subparsers.add_parser('save', help='Saves the rendered pages')
+    command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
+    command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
+    command_parser.add_argument('-o', '--output', type=str, default="rendered", help="Output directory containing the rendered HTML.")
+    command_parser.set_defaults(func=do_save)
+
 
     args = parser.parse_args()
     if args.func is None:

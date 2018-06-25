@@ -1,0 +1,12 @@
+{
+  "classes": [
+      "request",
+      "backoff",
+      "angry"
+    ],
+  "fields": [
+    "policy-id",
+    "claim-id",
+    "user-id"
+  ]
+}

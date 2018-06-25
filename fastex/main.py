@@ -12,7 +12,7 @@ import logging
 from collections import defaultdict
 import webbrowser
 
-from bottle import Bottle, jinja2_view, redirect
+from bottle import Bottle, jinja2_view, redirect, request, static_file
 from jinja2 import Template
 
 logger = logging.getLogger(__name__)
@@ -39,16 +39,37 @@ def do_init(args):
     shutil.copy(template_path, args.template)
 
 def serve(data, template=None, port=8080):
-    TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "view.html")
+    TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
+    STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
     if not template or not os.path.exists(template):
-        template = os.path.join(os.path.dirname(__file__), "template.html")
+        template = os.path.join(TEMPLATE_DIR, "template.html")
 
     # Start server.
     app = Bottle()
-    @jinja2_view(TEMPLATE_PATH)
+    @app.route('/view/')
+    @jinja2_view('view.html', template_lookup=[TEMPLATE_DIR])
     def view():
         return {'data_len': len(data)}
 
+    @app.route('/')
+    @app.route('/label/')
+    @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
+    def label():
+        return {'data_len': len(data)}
+
+    @app.route('/autocomplete/')
+    def autocomplete():
+        return json.dumps(["apples", "bananas"])
+
+    @app.route('/count/')
+    def count():
+        return json.dumps(len(data))
+
+    @app.route('/static/<path:path>')
+    def static(path):
+        return static_file(path, STATIC_DIR)
+
+    @app.route('/_/<idx:int>')
     @jinja2_view(template)
     def render(idx=0):
         idx = int(idx)
@@ -58,12 +79,17 @@ def serve(data, template=None, port=8080):
 
         return {'obj': obj}
 
-    app.route('/_/<idx:int>', 'GET', render)
-    app.route('/', 'GET', view)
-    webbrowser.open_new_tab('http://localhost:{}'.format(port))
-    app.run(reloader=True, port=port)
+    #webbrowser.open_new_tab('http://localhost:{}'.format(port))
+    app.run(reloader=True, port=port, debug=True)
 
 def do_view(args):
+    # 0. Find experiment dir.
+    data = load_jsonl(args.input)
+    logger.info("Serving %d inputs ", len(data))
+    serve(data, args.template, args.port)
+
+
+def do_label(args):
     # 0. Find experiment dir.
     data = load_jsonl(args.input)
     logger.info("Serving %d inputs ", len(data))
@@ -103,6 +129,13 @@ def main():
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
     command_parser.set_defaults(func=do_view)
+
+    command_parser = subparsers.add_parser('label', help='Label an experiment')
+    command_parser.add_argument('-i', '--input', type=argparse.FileType("r+"), default="data.jsonl", help="Data file with a list of JSON lines")
+    command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
+    command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
+    command_parser.set_defaults(func=do_label)
+
 
     command_parser = subparsers.add_parser('save', help='Saves the rendered pages')
     command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")

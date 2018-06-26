@@ -146,11 +146,6 @@ class ClassEntry {
   }
 }
 
-//$('iframe').on('load', evt => resize(evt.target));
-// $("#sidebar-submit").on("submit", evt => {
-//   console.log(evt);
-// });
-
 class ProgressBar {
   constructor() {
     this._dirty = true;
@@ -294,4 +289,6 @@ function fex_init(root) {
   let interface = new LabelInterface();
   interface.attach(node => root.append(node));
   interface.setIdx(1);
+
+  $('iframe').on('load', evt => resize(evt.target));
 }

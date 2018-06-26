@@ -127,7 +127,6 @@ def serve(data, template=None, port=8080, labels_path=None):
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
     app.run(reloader=True, port=port, debug=True)
 
-
 def do_init(args):
     template_path = os.path.join(os.path.dirname(__file__), "template.html")
     shutil.copy(template_path, args.template)
@@ -142,7 +141,8 @@ def do_view(args):
 
 def do_label(args):
     # 0. Find experiment dir.
-    data = load_jsonl(args.input)
+    with args.input:
+        data = load_jsonl(args.input)
     logger.info("Serving %d inputs ", len(data))
     serve(data, args.template, args.port, args.output)
 

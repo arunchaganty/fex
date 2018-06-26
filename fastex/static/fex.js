@@ -38,6 +38,10 @@ class Button {
       .on("click", this.handleClick)
     ));
   }
+
+  elem() {
+    return $("#" + this.name);
+  }
 }
 
 class ClassEntry {
@@ -55,6 +59,10 @@ class ClassEntry {
     this.listeners.forEach(listener => listener(val));
   }
 
+  dirty() {
+    this._dirty = true;
+  }
+
   attach(fn) {
     if ($("#" + this.name).length > 0) {
       console.log("Already attached " + this.name + "doing nothing.");
@@ -65,7 +73,7 @@ class ClassEntry {
     let obj = addInputGroup(
       undefined,
       // $("<label for='"+this.name+"'>"+this.name+"</label>"),
-      $("<input type='text' id='"+this.name+"' class='form-control' placeholder='type " + this.name + "(s) here' tabindex='1'/>")
+      $("<input type='text' id='"+this.name+"' class='form-control' placeholder='type " + this.name + "(s) here' />")
         // don't navigate away from the field on tab when selecting an item
         .on( "keydown", function( event ) {
           if ( event.keyCode === $.ui.keyCode.TAB &&
@@ -128,7 +136,13 @@ class ClassEntry {
   }
 
   value() {
-    return this.elem().val();
+    let terms = split(this.elem().val());
+    return terms;
+  }
+
+  setValue(vs) {
+    console.log(vs);
+    this.elem().val(vs.join( ", " ));
   }
 }
 
@@ -186,15 +200,19 @@ class ProgressBar {
     $('span#progress-idx').innerText = idx;
   }
   handleChange(evt) {
-    this.listeners.forEach(listener => listener(evt.target.value));
+    this.listeners.forEach(listener => listener(Number.parseInt(evt.target.value)));
   }
   
   elem() {
     return $("#progress");
   }
-  
+
   value(val) {
-    this.elem().val(val)
+    if (val) {
+      this.elem().val(val);
+    }
+    let ret =  Number.parseInt(this.elem().val());
+    return ret;
   }
 }
 
@@ -204,10 +222,10 @@ class LabelInterface {
     this.entry = new ClassEntry("intent");
     this.submit = new Button("Next", true);
 
+    let self = this;
     // Hook up progress bar to change document.
     this.progress.listeners.push(idx => {
-      $('span#progress-idx').text(idx);
-      $('iframe').attr("src", "/_/" + (idx-1));
+      self.setIdx(idx);
     });
 
     // Hook up next button to submit data on completion and then update
@@ -216,14 +234,18 @@ class LabelInterface {
       if (!submit) return;
 
       let blob = {};
-      blob.idx = self.idx;
+      blob["_idx"] = self.progress.value() - 1;
       blob["intent"] = self.entry.value();
+      console.log(blob);
 
       $.ajax({
         url: "/update/",
+        contentType: "application/json",
+        method: "post",
+        data: JSON.stringify(blob),
         dataType: "json",
-        data: blob,
         success: function(data) {
+          self.entry.dirty();
           self.setIdx(self.progress.value() + 1);
         }
       });
@@ -231,6 +253,27 @@ class LabelInterface {
   }
 
   setIdx(idx) {
+    let self = this;
+
+    this.progress.limit(lim => {
+      if (idx <= lim) {
+        $('input#progress').val(idx);
+        $('span#progress-idx').text(idx);
+        $('iframe').attr("src", "/_/" + (idx-1));
+
+        $.ajax({
+          url: "/get/" + (idx-1),
+          method: "get",
+          dataType: "json",
+          success: data => {
+            self.entry.setValue(data["intent"] || []);
+            self.entry.elem().focus();
+          },
+        });
+      } else {
+        console.warn("Tried to cross last possible index.");
+      }
+    });
   }
 
   attach(fn) {
@@ -250,4 +293,5 @@ class LabelInterface {
 function fex_init(root) {
   let interface = new LabelInterface();
   interface.attach(node => root.append(node));
+  interface.setIdx(1);
 }

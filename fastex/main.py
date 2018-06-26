@@ -12,10 +12,14 @@ import logging
 from collections import defaultdict
 import webbrowser
 
-from bottle import Bottle, jinja2_view, redirect, request, static_file
+import bottle
+from bottle import Bottle, jinja2_view, static_file
 from jinja2 import Template
 
 logger = logging.getLogger(__name__)
+
+def prune_empty(lst):
+    return [elem for elem in lst if elem]
 
 def load_jsonl(fstream):
     if isinstance(fstream, str):
@@ -34,11 +38,7 @@ def save_jsonl(fstream, objs):
         fstream.write(json.dumps(obj, sort_keys=True))
         fstream.write("\n")
 
-def do_init(args):
-    template_path = os.path.join(os.path.dirname(__file__), "template.html")
-    shutil.copy(template_path, args.template)
-
-def serve(data, template=None, port=8080):
+def serve(data, template=None, port=8080, labels_path=None):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
     if not template or not os.path.exists(template):
@@ -46,41 +46,92 @@ def serve(data, template=None, port=8080):
 
     # Start server.
     app = Bottle()
-    @app.route('/view/')
+
+    # Initialize labels.
+    labels = load_jsonl(labels_path) if labels_path and os.path.exists(labels_path) else []
+    if len(labels) < len(data):
+        labels += [{} for _ in range(len(data) - len(labels))]
+    assert len(labels) == len(data)
+
+    label_values = defaultdict(set)
+    for obj in labels:
+        for key, vs in obj.items():
+            label_values[key].update(vs)
+
+    @app.get('/view/')
     @jinja2_view('view.html', template_lookup=[TEMPLATE_DIR])
     def view():
         return {'data_len': len(data)}
 
-    @app.route('/')
-    @app.route('/label/')
+    @app.get('/')
+    @app.get('/label/')
     @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
     def label():
-        return {'data_len': len(data)}
+        return {}
 
-    @app.route('/autocomplete/')
+    # API
+    @app.get('/autocomplete/')
     def autocomplete():
-        return json.dumps(["apples", "bananas"])
+        name = bottle.request.GET.get("name")
 
-    @app.route('/count/')
+        bottle.response.content_type = 'application/json'
+        if name:
+            return json.dumps(sorted(label_values[name]))
+        else:
+            return json.dumps([])
+
+    @app.get('/count/')
     def count():
+        bottle.response.content_type = 'application/json'
         return json.dumps(len(data))
 
-    @app.route('/static/<path:path>')
+    @app.post('/update/')
+    def update():
+        obj = bottle.request.json
+        idx = obj["_idx"]
+
+        update = {}
+        for key, vs in obj.items():
+            if key.startswith("_"): continue
+            vs = prune_empty(vs)
+            labels[idx][key] = vs
+            label_values[key].update(vs)
+
+        if labels_path:
+            save_jsonl(labels_path, labels)
+
+        bottle.response.content_type = 'application/json'
+        return json.dumps(True)
+
+    @app.get('/get/<idx:int>')
+    def get(idx):
+        assert idx >= 0 and idx < len(labels)
+
+        bottle.response.content_type = 'application/json'
+        return json.dumps(labels[idx])
+
+    @app.get('/static/<path:path>')
     def static(path):
         return static_file(path, STATIC_DIR)
 
-    @app.route('/_/<idx:int>')
+    @app.get('/_/<idx:int>')
     @jinja2_view(template)
     def render(idx=0):
         idx = int(idx)
         if idx > len(data):
-            return redirect("/_/0")
+            return bottle.redirect("/_/0")
         obj = data[idx]
 
         return {'obj': obj}
 
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
     app.run(reloader=True, port=port, debug=True)
+
+
+def do_init(args):
+    template_path = os.path.join(os.path.dirname(__file__), "template.html")
+    shutil.copy(template_path, args.template)
+
 
 def do_view(args):
     # 0. Find experiment dir.
@@ -93,7 +144,7 @@ def do_label(args):
     # 0. Find experiment dir.
     data = load_jsonl(args.input)
     logger.info("Serving %d inputs ", len(data))
-    serve(data, args.template, args.port)
+    serve(data, args.template, args.port, args.output)
 
 def do_save(args):
     # 0. Find experiment dir.
@@ -131,7 +182,8 @@ def main():
     command_parser.set_defaults(func=do_view)
 
     command_parser = subparsers.add_parser('label', help='Label an experiment')
-    command_parser.add_argument('-i', '--input', type=argparse.FileType("r+"), default="data.jsonl", help="Data file with a list of JSON lines")
+    command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
+    command_parser.add_argument('-o', '--output', type=str, default="labels.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
     command_parser.set_defaults(func=do_label)

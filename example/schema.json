@@ -1,12 +1,18 @@
 {
-  "classes": [
-      "request",
-      "backoff",
-      "angry"
-    ],
-  "fields": [
-    "policy-id",
-    "claim-id",
-    "user-id"
-  ]
+  "intent": {
+      "type": "multilabel",
+      "values": [
+          "findInspections",
+          "updateDetails(address)",
+          "updateDetails(?)",
+          "requestPolicy"
+      ]
+  },
+  "language": {
+      "type": "multilabel",
+      "values": []
+  },
+  "notes": {
+      "type": "text"
+  }
 }

@@ -16,29 +16,14 @@ import bottle
 from bottle import Bottle, jinja2_view, static_file
 from jinja2 import Template
 
+from .util import save_jsonl, load_jsonl, FileBackedJson, FileBackedJsonList
+
 logger = logging.getLogger(__name__)
 
 def prune_empty(lst):
     return [elem for elem in lst if elem]
 
-def load_jsonl(fstream):
-    if isinstance(fstream, str):
-        with open(fstream) as fstream_:
-            return load_jsonl(fstream_)
-
-    return [json.loads(line) for line in fstream]
-
-def save_jsonl(fstream, objs):
-    if isinstance(fstream, str):
-        with open(fstream, "w") as fstream_:
-            save_jsonl(fstream_, objs)
-        return
-
-    for obj in objs:
-        fstream.write(json.dumps(obj, sort_keys=True))
-        fstream.write("\n")
-
-def serve(data, template=None, port=8080, labels_path=None):
+def serve(data, template=None, port=8080, schema=None, labels=None):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
     if not template or not os.path.exists(template):
@@ -48,9 +33,8 @@ def serve(data, template=None, port=8080, labels_path=None):
     app = Bottle()
 
     # Initialize labels.
-    labels = load_jsonl(labels_path) if labels_path and os.path.exists(labels_path) else []
     if len(labels) < len(data):
-        labels += [{} for _ in range(len(data) - len(labels))]
+        labels.extend([{} for _ in range(len(data) - len(labels))])
     assert len(labels) == len(data)
 
     label_values = defaultdict(set)
@@ -67,7 +51,7 @@ def serve(data, template=None, port=8080, labels_path=None):
     @app.get('/label/')
     @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
     def label():
-        return {}
+        return {"schema": schema.obj}
 
     # API
     @app.get('/autocomplete/')
@@ -75,10 +59,11 @@ def serve(data, template=None, port=8080, labels_path=None):
         name = bottle.request.GET.get("name")
 
         bottle.response.content_type = 'application/json'
-        if name:
-            return json.dumps(sorted(label_values[name]))
-        else:
-            return json.dumps([])
+        ret = []
+        if name in schema and schema[name].get("type") in ["multiclass", "multilabel"]:
+            ret = sorted(schema[name]["values"])
+        print(ret)
+        return json.dumps(ret)
 
     @app.get('/count/')
     def count():
@@ -91,14 +76,23 @@ def serve(data, template=None, port=8080, labels_path=None):
         idx = obj["_idx"]
 
         update = {}
-        for key, vs in obj.items():
+        for key, value in obj.items():
             if key.startswith("_"): continue
-            vs = prune_empty(vs)
-            labels[idx][key] = vs
-            label_values[key].update(vs)
+            if key not in schema: continue
 
-        if labels_path:
-            save_jsonl(labels_path, labels)
+            if schema[key].get("type") == "multilabel":
+                vs = prune_empty(value)
+                labels[idx][key] = vs
+                schema[key]["values"] = sorted(set(schema[key]["values"] + vs))
+            elif schema[key].get("type") == "multiclass":
+                labels[idx][key] = value
+                schema[key]["values"] = sorted(set(schema[key]["values"] + [value]))
+            elif schema[key].get("type") == "text":
+                labels[idx][key] = value
+            else:
+                raise ValueError("Not supported type.")
+        labels.save()
+        schema.save()
 
         bottle.response.content_type = 'application/json'
         return json.dumps(True)
@@ -144,7 +138,11 @@ def do_label(args):
     with args.input:
         data = load_jsonl(args.input)
     logger.info("Serving %d inputs ", len(data))
-    serve(data, args.template, args.port, args.output)
+
+    labels = FileBackedJsonList(args.output)
+    schema = FileBackedJson(args.schema)
+
+    serve(data, args.template, args.port, schema, labels)
 
 def do_save(args):
     # 0. Find experiment dir.
@@ -185,6 +183,7 @@ def main():
     command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-o', '--output', type=str, default="labels.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
+    command_parser.add_argument('-s', '--schema', type=str, default="schema.json", help="Template file to write")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
     command_parser.set_defaults(func=do_label)
 

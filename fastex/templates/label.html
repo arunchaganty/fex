@@ -46,7 +46,9 @@
     <script src="/static/fex.js"></script>
 
     <script type="text/javascript">
-      $(() => {fex_init($("#sidebar"));});
+      var schema = {{ schema|tojson|safe }};
+      console.log(schema)
+      $(() => {fex_init($("#sidebar"), schema);});
     </script>
   </body>
 </html>

@@ -44,7 +44,57 @@ class Button {
   }
 }
 
-class ClassEntry {
+class TextWidget {
+  constructor(name) {
+    this.name = name;
+    this.listeners = [];
+
+    this.handleChange = this.handleChange.bind(this);
+  }
+
+  handleChange(evt) {
+    let val = this.value();
+    this.listeners.forEach(listener => listener(val));
+  }
+
+  attach(fn) {
+    if ($("#" + this.name).length > 0) {
+      console.log("Already attached " + this.name + "doing nothing.");
+      return;
+    }
+    const self = this;
+
+    let obj = addInputGroup(
+      undefined,
+      // $("<label for='"+this.name+"'>"+this.name+"</label>"),
+      $("<textarea id='"+this.name+"' class='form-control' placeholder='type " + this.name + "(s) here'></textarea>")
+        .on("change", this.handleChange)
+    );
+    fn(obj);
+  }
+
+  elem() {
+    return $("#" + this.name);
+  }
+
+  value() {
+    let terms = split(this.elem().val());
+    return terms;
+  }
+
+  setValue(val) {
+    this.elem().val(val);
+  }
+
+  clear() {
+    this.setValue("");
+  }
+
+  dirty() {}
+}
+
+
+class MultiLabelWidget {
   constructor(name) {
     this.name = name;
     this._choices = [];
@@ -144,6 +194,10 @@ class ClassEntry {
     console.log(vs);
     this.elem().val(vs.join( ", " ));
   }
+
+  clear() {
+    this.setValue([]);
+  }
 }
 
 class ProgressBar {
@@ -202,20 +256,34 @@ class ProgressBar {
     return $("#progress");
   }
 
-  value(val) {
-    if (val) {
-      this.elem().val(val);
-    }
-    let ret =  Number.parseInt(this.elem().val());
-    return ret;
+  value() {
+    return  Number.parseInt(this.elem().val());
+  }
+
+  setValue(val) {
+    this.elem().val(val);
+  }
+
+  clear() {
+    this.setValue(1);
   }
 }
 
 class LabelInterface {
-  constructor() {
+  constructor(schema) {
     this.progress = new ProgressBar();
-    this.entry = new ClassEntry("intent");
     this.submit = new Button("Next", true);
+
+    this.widgets = [];
+    for (let key of Object.keys(schema)) {
+      if (schema[key].type === "multilabel") {
+        this.widgets.push(new MultiLabelWidget(key));
+      } else if (schema[key].type === "text") {
+        this.widgets.push(new TextWidget(key));
+      } else {
+        console.error("Could not add widget for type " + schema[key].type);
+      }
+    }
 
     let self = this;
     // Hook up progress bar to change document.
@@ -230,7 +298,9 @@ class LabelInterface {
 
       let blob = {};
       blob["_idx"] = self.progress.value() - 1;
-      blob["intent"] = self.entry.value();
+      for (let widget of self.widgets) {
+        blob[widget.name] = widget.value();
+      }
       console.log(blob);
 
       $.ajax({
@@ -240,7 +310,7 @@ class LabelInterface {
         data: JSON.stringify(blob),
         dataType: "json",
         success: function(data) {
-          self.entry.dirty();
+          self.widgets.forEach(w => w.dirty());
           self.setIdx(self.progress.value() + 1);
         }
       });
@@ -261,8 +331,13 @@ class LabelInterface {
           method: "get",
           dataType: "json",
           success: data => {
-            self.entry.setValue(data["intent"] || []);
-            self.entry.elem().focus();
+            for (let widget of self.widgets) {
+              if (data[widget.name]) {
+                widget.setValue(data[widget.name]);
+              } else {
+                widget.clear();
+              }
+            }
           },
         });
       } else {
@@ -278,15 +353,17 @@ class LabelInterface {
     }
     let node = $("<div id='interface'></div>");
     this.progress.attach(widget => node.append(widget));
-    this.entry.attach(widget => node.append(widget));
+    for (let widget of this.widgets) {
+      widget.attach(widget => node.append(widget));
+    }
     this.submit.attach(widget => node.append(widget));
 
     fn(node);
   }
 }
 
-function fex_init(root) {
-  let interface = new LabelInterface();
+function fex_init(root, schema) {
+  let interface = new LabelInterface(schema);
   interface.attach(node => root.append(node));
   interface.setIdx(1);
 

@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def prune_empty(lst):
     return [elem for elem in lst if elem]
 
-def or_filter(fieldnames, fieldvalue, op):
+def or_filter(fieldnames, fieldvalue):
     # print('filter {} {}'.format(fieldnames, fieldvalue))
     def check_field(elem, path, searchvalue):
         if len(path) == 0:

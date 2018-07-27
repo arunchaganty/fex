@@ -57,14 +57,30 @@
         obj.style.height = obj.contentWindow.document.body.scrollHeight + 'px';
       }
 
+      // Navigate
       function gotoItem(idx) {
         document.querySelector('#progress').value = idx;
         document.querySelector('span#progress-idx').innerText = idx;
         document.querySelector('iframe').src = "/_/" + (idx-1);
       }
 
+      function gotoPrevFilteredItem() {
+        const idx = parseInt(document.querySelector('#progress').value);
+        if (filtered_indices && filtered_indices.length) {
+          const fidx = filtered_indices.findIndex(function(x) { return x < idx; });
+          // console.log('got index ' + fidx, idx);
+          if (fidx >= 0) {
+            gotoItem(filtered_indices[fidx]+1);
+          } else {
+            gotoItem(filtered_indices[filtered_indices.length-1]+1);
+          }
+        } else {
+          gotoItem(idx-1);
+        }
+      }
+
       function gotoNextFilteredItem() {
-        const idx = document.querySelector('#progress').value;
+        const idx = parseInt(document.querySelector('#progress').value);
         if (filtered_indices && filtered_indices.length) {
           const fidx = filtered_indices.findIndex(function(x) { return x > idx; });
           // console.log('got index ' + fidx, idx);
@@ -78,6 +94,7 @@
         }
       }
 
+      // Hookup UI elements
       document.addEventListener('DOMContentLoaded',function() {
           document.querySelector('input#search').onchange=searchChangeEventHandler;
           document.querySelector('input#progress').onchange=changeEventHandler;
@@ -85,8 +102,12 @@
       },false);
       window.addEventListener('message', function(event) {
         var message = JSON.parse(event.data);
-        if (message.action === 'setProgressIdx') {
+        if (message.action === 'gotoItem') {
           gotoItem(message.idx);
+        } else if (message.action === 'gotoPrevFilteredItem') {
+          gotoPrevFilteredItem();
+        } else if (message.action === 'gotoNextFilteredItem') {
+          gotoNextFilteredItem();
         } else {
           console.error('Unsupported message', message);
         }
@@ -94,6 +115,8 @@
       window.addEventListener("keyup", function(event) {
         if (event.keyCode === 78 /* 'n' */ ) {
           gotoNextFilteredItem();
+        } else if (event.keyCode === 80 /* 'p' */ ) {
+          gotoPrevFilteredItem();
         }
       });
 

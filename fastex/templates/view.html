@@ -14,6 +14,14 @@
     <nav class="navbar navbar-light bg-light">
       <a class="navbar-brand">fex:view</a>
 
+      <div class="form-inline">
+        <div class="input-group mb-2 mr-sm-2">
+            <div class="input-group-prepend">
+              <span class="input-group-text" id="basic-addon1">Filter</span>
+            </div>
+            <input type="text" id="search" class="form-control" />
+        </div>
+      </div>
 
       <div class="form-inline">
         <div class="input-group mb-2 mr-sm-2">
@@ -37,19 +45,57 @@
 
     <!-- Optional JavaScript -->
     <!-- jQuery first, then Popper.js, then Bootstrap JS -->
-    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/js/bootstrap.min.js" integrity="sha384-smHYKdLADwkXOn1EmN1qk/HfnUcbVRZyYmZ4qpPea6sjB/pTJ0euyQp0Mk8ck+5T" crossorigin="anonymous"></script>
 
     <script type="text/javascript">
+      var filtered_indices = null;
+      var search_text = null;
+
       function resize(obj) {
         obj.style.height = obj.contentWindow.document.body.scrollHeight + 'px';
       }
 
+      function gotoItem(idx) {
+        document.querySelector('#progress').value = idx;
+        document.querySelector('span#progress-idx').innerText = idx;
+        document.querySelector('iframe').src = "/_/" + (idx-1);
+      }
+
+      function gotoNextFilteredItem() {
+        const idx = document.querySelector('#progress').value;
+        if (filtered_indices && filtered_indices.length) {
+          const fidx = filtered_indices.findIndex(function(x) { return x > idx; });
+          // console.log('got index ' + fidx, idx);
+          if (fidx >= 0) {
+            gotoItem(filtered_indices[fidx]+1);
+          } else {
+            gotoItem(filtered_indices[0]+1);
+          }
+        } else {
+          gotoItem(idx+1);
+        }
+      }
+
       document.addEventListener('DOMContentLoaded',function() {
+          document.querySelector('input#search').onchange=searchChangeEventHandler;
           document.querySelector('input#progress').onchange=changeEventHandler;
           document.querySelector('input#progress').oninput=previewChangeEventHandler;
       },false);
+      window.addEventListener('message', function(event) {
+        var message = JSON.parse(event.data);
+        if (message.action === 'setProgressIdx') {
+          gotoItem(message.idx);
+        } else {
+          console.error('Unsupported message', message);
+        }
+      },false);
+      window.addEventListener("keyup", function(event) {
+        if (event.keyCode === 78 /* 'n' */ ) {
+          gotoNextFilteredItem();
+        }
+      });
 
       function previewChangeEventHandler(event) {
         const idx = event.target.value;
@@ -60,6 +106,26 @@
         const idx = event.target.value;
         document.querySelector('span#progress-idx').innerText = idx;
         document.querySelector('iframe').src = "/_/" + (idx-1);
+      }
+
+
+      function searchChangeEventHandler(event) {
+        const new_search_text = document.querySelector('input#search').value;
+        console.log('searching for ', new_search_text);
+        $.ajax({
+          url: "/search/",
+          contentType: "application/json",
+          method: "post",
+          data: JSON.stringify({ query: new_search_text }),
+          dataType: "json",
+          success: function(data) {
+            filtered_indices = data;
+            search_text = new_search_text;
+            if (filtered_indices && filtered_indices.length) {
+              gotoItem(filtered_indices[0]+1);
+            }
+          }
+        });
       }
 
     </script>

@@ -23,7 +23,58 @@ logger = logging.getLogger(__name__)
 def prune_empty(lst):
     return [elem for elem in lst if elem]
 
-def serve(data, template=None, port=8080, schema=None, labels=None):
+def or_filter(fieldnames, fieldvalue, op):
+    # print('filter {} {}'.format(fieldnames, fieldvalue))
+    def check_field(elem, path, searchvalue):
+        if len(path) == 0:
+            if searchvalue == '*':
+                if elem is not None:
+                    return True
+            elif str(elem) == searchvalue:
+                return True
+        else:
+            fieldname = path.pop()
+            if isinstance(elem, dict):
+                elem_value = elem.get(fieldname)
+                if elem_value is not None:
+                    if isinstance(elem_value, list):
+                        # check any of the values
+                        for v in elem_value:
+                          if check_field(v, path, searchvalue):
+                            return True
+                    else:
+                        return check_field(elem_value, path, searchvalue)
+        return False
+    def f(elem):
+        for fieldname in fieldnames:
+            path = fieldname.split('.')
+            path.reverse()
+            if check_field(elem, path, fieldvalue):
+                return True
+    return f
+
+def find_records(lst, query_str, text_fields=[]):
+    conditions = query_str.split(' ')
+    filters = []
+    for condition in conditions:
+        parts = condition.split(':')
+        if len(parts) == 1:
+            filters.append(or_filter(text_fields, parts[0]))
+        elif len(parts) == 2:
+            filters.append(or_filter([parts[0]], parts[1]))
+        else:
+            raise Exception('Invalid query string to find_records')
+    def filter_record(elem):
+        for f in filters:
+            if not f(elem):
+                return False
+        return True
+    return [(i,rec) for i,rec in enumerate(lst) if filter_record(rec)]
+
+def find_record_indices(lst, query_str, text_fields=[]):
+    return [i for i,rec in find_records(lst, query_str, text_fields)]
+
+def serve(data, template=None, port=8080, schema=None, labels=[]):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
     if not template or not os.path.exists(template):
@@ -104,6 +155,16 @@ def serve(data, template=None, port=8080, schema=None, labels=None):
         bottle.response.content_type = 'application/json'
         return json.dumps(labels[idx])
 
+    @app.get('/search/<query>')
+    @app.post('/search/')
+    def search(query=None):
+        if query is None:
+            query_obj = bottle.request.json
+            query = query_obj.get('query')
+        results = find_record_indices(data, query)
+        bottle.response.content_type = 'application/json'
+        return json.dumps(results)
+
     @app.get('/static/<path:path>')
     def static(path):
         return static_file(path, STATIC_DIR)
@@ -120,6 +181,7 @@ def serve(data, template=None, port=8080, schema=None, labels=None):
 
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
     app.run(reloader=True, port=port, debug=True)
+
 
 def do_init(args):
     template_path = os.path.join(os.path.dirname(__file__), "template.html")

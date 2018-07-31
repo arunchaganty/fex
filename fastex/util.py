@@ -34,6 +34,9 @@ class FileBackedJson():
         else:
             self.obj = {}
 
+    def get(self, key, default=None):
+        return self.obj.get(key, default)
+
     def __getitem__(self, key):
         return self.obj[key]
 

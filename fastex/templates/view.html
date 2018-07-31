@@ -17,8 +17,8 @@
 
       <div class="form-inline">
         <div class="input-group mb-2 mr-sm-2">
-            <div class="input-group-prepend">
-              <span class="input-group-text" id="basic-addon1">Filter</span>
+            <div class="input-group-prepend" style="cursor: default;">
+              <span class="input-group-text" id="basic-addon1" onclick="doSearch()">Filter</span>
             </div>
             <input type="text" id="search" class="form-control" />
             <div class="input-group-append">
@@ -31,7 +31,7 @@
                       onclick="gotoNextFilteredItem()"></span>
               </span>
             </div>
-          </div>
+        </div>
       </div>
 
       <div class="form-inline">
@@ -41,6 +41,8 @@
         </div>
       </div>
     </nav>
+    <div id="matched">
+    </div>
 
     <iframe 
       id="iframe"
@@ -108,9 +110,9 @@
 
       // Hookup UI elements
       document.addEventListener('DOMContentLoaded',function() {
-          document.querySelector('input#search').onchange=searchChangeEventHandler;
           document.querySelector('input#progress').onchange=changeEventHandler;
           document.querySelector('input#progress').oninput=previewChangeEventHandler;
+          document.querySelector('input#search').onchange=searchChangeEventHandler;
       },false);
       window.addEventListener('message', function(event) {
         var message = JSON.parse(event.data);
@@ -147,25 +149,37 @@
         document.querySelector('iframe').src = "/_/" + (idx-1);
       }
 
-
       function searchChangeEventHandler(event) {
+        doSearch();
+      }
+
+      function doSearch() {
         const new_search_text = document.querySelector('input#search').value;
-        console.log('searching for ', new_search_text);
-        $.ajax({
-          url: "/search/",
-          contentType: "application/json",
-          method: "post",
-          data: JSON.stringify({ query: new_search_text }),
-          dataType: "json",
-          success: function(data) {
-            filtered_indices = data;
-            // console.log(filtered_indices);
-            search_text = new_search_text;
-            if (filtered_indices && filtered_indices.length) {
-              gotoItem(filtered_indices[0]+1);
+        if (new_search_text.length > 0) {
+          console.log('searching for ', new_search_text);
+          $.ajax({
+            url: "/search/",
+            contentType: "application/json",
+            method: "post",
+            data: JSON.stringify({ query: new_search_text }),
+            dataType: "json",
+            success: function(data) {
+              filtered_indices = data;
+              // console.log(filtered_indices);
+              search_text = new_search_text;
+              if (filtered_indices && filtered_indices.length) {
+                gotoItem(filtered_indices[0]+1);
+                var total = $('#progress').attr('max');
+                $('#matched').text('Matched ' + filtered_indices.length + '/' + total);
+              } else {
+                $('#matched').text('');
+              }
             }
-          }
-        });
+          });
+        } else {
+          filtered_indices = null;
+          $('#matched').text('');
+        }
       }
 
     </script>

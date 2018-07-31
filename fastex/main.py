@@ -17,64 +17,14 @@ from bottle import Bottle, jinja2_view, static_file
 from jinja2 import Template
 
 from .util import save_jsonl, load_jsonl, FileBackedJson, FileBackedJsonList
+from .search import find_record_indices
 
 logger = logging.getLogger(__name__)
 
 def prune_empty(lst):
     return [elem for elem in lst if elem]
 
-def or_filter(fieldnames, fieldvalue):
-    # print('filter {} {}'.format(fieldnames, fieldvalue))
-    def check_field(elem, path, searchvalue):
-        if len(path) == 0:
-            if searchvalue == '*':
-                if elem is not None:
-                    return True
-            elif str(elem) == searchvalue:
-                return True
-        else:
-            fieldname = path.pop()
-            if isinstance(elem, dict):
-                elem_value = elem.get(fieldname)
-                if elem_value is not None:
-                    if isinstance(elem_value, list):
-                        # check any of the values
-                        for v in elem_value:
-                          if check_field(v, path, searchvalue):
-                            return True
-                    else:
-                        return check_field(elem_value, path, searchvalue)
-        return False
-    def f(elem):
-        for fieldname in fieldnames:
-            path = fieldname.split('.')
-            path.reverse()
-            if check_field(elem, path, fieldvalue):
-                return True
-    return f
-
-def find_records(lst, query_str, text_fields=[]):
-    conditions = query_str.split(' ')
-    filters = []
-    for condition in conditions:
-        parts = condition.split(':')
-        if len(parts) == 1:
-            filters.append(or_filter(text_fields, parts[0]))
-        elif len(parts) == 2:
-            filters.append(or_filter([parts[0]], parts[1]))
-        else:
-            raise Exception('Invalid query string to find_records')
-    def filter_record(elem):
-        for f in filters:
-            if not f(elem):
-                return False
-        return True
-    return [(i,rec) for i,rec in enumerate(lst) if filter_record(rec)]
-
-def find_record_indices(lst, query_str, text_fields=[]):
-    return [i for i,rec in find_records(lst, query_str, text_fields)]
-
-def serve(data, template=None, port=8080, schema=None, labels=[]):
+def serve(data, template=None, port=8080, schema=None, labels=[], query_schema=None):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
     if not template or not os.path.exists(template):
@@ -161,7 +111,7 @@ def serve(data, template=None, port=8080, schema=None, labels=[]):
         if query is None:
             query_obj = bottle.request.json
             query = query_obj.get('query')
-        results = find_record_indices(data, query)
+        results = find_record_indices(data, query, query_schema)
         bottle.response.content_type = 'application/json'
         return json.dumps(results)
 
@@ -192,7 +142,14 @@ def do_view(args):
     # 0. Find experiment dir.
     data = load_jsonl(args.input)
     logger.info("Serving %d inputs ", len(data))
-    serve(data, args.template, args.port)
+
+    if args.query_schema:
+        from .search import QuerySchema
+        query_schema = QuerySchema(FileBackedJson(args.query_schema))
+    else:
+        query_schema = None
+
+    serve(data, args.template, args.port, query_schema=query_schema)
 
 
 def do_label(args):
@@ -239,6 +196,7 @@ def main():
     command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
+    command_parser.add_argument('-q', '--query_schema', type=str, help="Schema for querying")
     command_parser.set_defaults(func=do_view)
 
     command_parser = subparsers.add_parser('label', help='Label an experiment')

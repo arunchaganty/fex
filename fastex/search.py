@@ -41,7 +41,7 @@ class QuerySchema():
 def or_filter(fieldnames, fieldvalue, check_value=None):
     # print('filter {} {}'.format(fieldnames, fieldvalue))
     if check_value is None:
-        check_value = lambda sv, tv: str(tv) == searchvalue
+        check_value = lambda sv, tv: str(tv) == sv
 
     def check_field(elem, path, searchvalue):
         if len(path) == 0:

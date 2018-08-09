@@ -3,6 +3,7 @@
 """
 Turk experiment helper.
 """
+import copy
 import os
 import sys
 import pdb
@@ -24,11 +25,44 @@ logger = logging.getLogger(__name__)
 def prune_empty(lst):
     return [elem for elem in lst if elem]
 
-def serve(data, template=None, port=8080, schema=None, labels=[], query_schema=None):
+def serve(data, template=None, port=8080, annotation_schema=None, labels=[], query_schema=None):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
     if not template or not os.path.exists(template):
         template = os.path.join(TEMPLATE_DIR, "template.html")
+
+    # Do some processing with the annotation schema
+    schema_metadata = annotation_schema.get('_schema_metadata_')
+    basic_types = ["text", "multilabel", "multiclass", "record"]
+    if schema_metadata is not None:
+        schema_types = {t.get('name'):t for t in annotation_schema.get('types')}
+        for f in annotation_schema.get('fields'):
+            t = f.get('type')
+            if t in basic_types and f['name'] not in schema_types:
+                schema_types[f['name']] = f
+        def convert_fields(fields):
+            res = {}
+            for f in fields:
+                t = f.get('type')
+                if t in basic_types:
+                    # okay
+                    if t == 'record':
+                        f = copy.copy(f)
+                        f['fields'] = convert_fields(f.get('fields'))
+                    res[f['name']] = f
+                elif t in schema_types:
+                    f = copy.copy(f)
+                    f['type'] = schema_types[t]
+                    if f['type'].get('type') == 'record':
+                        f['type']['fields'] = convert_fields(f['type'].get('fields'))
+                    res[f['name']] = f
+                else:
+                    logger.warning("Unsupported type {}".format(t))
+            return res
+        schema_fields = convert_fields(annotation_schema.get('fields'))
+    else:
+        schema_types = annotation_schema.obj
+        schema_fields = annotation_schema.obj
 
     # Start server.
     app = Bottle()
@@ -52,7 +86,7 @@ def serve(data, template=None, port=8080, schema=None, labels=[], query_schema=N
     @app.get('/label/')
     @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
     def label():
-        return {"schema": schema.obj}
+        return {"schema": schema_fields}
 
     # API
     @app.get('/autocomplete/')
@@ -61,8 +95,8 @@ def serve(data, template=None, port=8080, schema=None, labels=[], query_schema=N
 
         bottle.response.content_type = 'application/json'
         ret = []
-        if name in schema and schema[name].get("type") in ["multiclass", "multilabel"]:
-            ret = sorted(schema[name]["values"])
+        if name in schema_types and schema_types[name].get("type") in ["multiclass", "multilabel"]:
+            ret = sorted(schema_types[name]["values"])
         print(ret)
         return json.dumps(ret)
 
@@ -76,24 +110,23 @@ def serve(data, template=None, port=8080, schema=None, labels=[], query_schema=N
         obj = bottle.request.json
         idx = obj["_idx"]
 
-        update = {}
         for key, value in obj.items():
             if key.startswith("_"): continue
             if key not in schema: continue
 
-            if schema[key].get("type") == "multilabel":
+            if schema_types[key].get("type") == "multilabel":
                 vs = prune_empty(value)
                 labels[idx][key] = vs
-                schema[key]["values"] = sorted(set(schema[key]["values"] + vs))
-            elif schema[key].get("type") == "multiclass":
+                schema_types[key]["values"] = sorted(set(schema[key]["values"] + vs))
+            elif schema_types[key].get("type") == "multiclass":
                 labels[idx][key] = value
-                schema[key]["values"] = sorted(set(schema[key]["values"] + [value]))
-            elif schema[key].get("type") == "text":
+                schema_types[key]["values"] = sorted(set(schema[key]["values"] + [value]))
+            elif schema_types[key].get("type") == "text":
                 labels[idx][key] = value
             else:
                 raise ValueError("Not supported type.")
         labels.save()
-        schema.save()
+        annotation_schema.save()
 
         bottle.response.content_type = 'application/json'
         return json.dumps(True)
@@ -161,7 +194,13 @@ def do_label(args):
     labels = FileBackedJsonList(args.output)
     schema = FileBackedJson(args.schema)
 
-    serve(data, args.template, args.port, schema, labels)
+    if args.query_schema:
+        from .search import QuerySchema
+        query_schema = QuerySchema(FileBackedJson(args.query_schema))
+    else:
+        query_schema = None
+
+    serve(data, args.template, args.port, schema, labels, query_schema=query_schema)
 
 def do_save(args):
     # 0. Find experiment dir.
@@ -204,6 +243,7 @@ def main():
     command_parser.add_argument('-o', '--output', type=str, default="labels.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-s', '--schema', type=str, default="schema.json", help="Template file to write")
+    command_parser.add_argument('-q', '--query_schema', type=str, help="Schema for querying")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
     command_parser.set_defaults(func=do_label)
 

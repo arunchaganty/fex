@@ -200,6 +200,155 @@ class MultiLabelWidget {
   }
 }
 
+class ComboLabelWidget {
+  constructor(name, schema) {
+    console.log('processing', schema);
+    this.name = name;
+
+    this.widgets = [];
+    for (let key of Object.keys(schema)) {
+      let baseWidget = null;
+      let key_info = schema[key];
+      let typename = (typeof key_info.type === "string")? key_info.type  : key_info.type.type;
+      if (typename === "multilabel") {
+        baseWidget = new MultiLabelWidget(key);
+      } else if (typename === "text") {
+        baseWidget = new TextWidget(key);
+      } else if (typename === "record") {
+        let fields = (typeof key_info.type === "string")? key_info.fields : key_info.type.fields;
+        baseWidget = new ComboLabelWidget(key, fields);
+      } else {
+        console.error("Could not add widget for type " + typename);
+      }
+      if (baseWidget) {
+        if (schema[key].repeated) {
+          this.widgets.push(new RepeatedLabelWidget(baseWidget, schema[key].useMap));
+        } else {
+          this.widgets.push(baseWidget);
+        }
+      }
+    }
+  }
+
+  getWidget(fieldname) {
+    let path = Array.isArray(fieldname)? fieldname : fieldname.split('.');
+    var matched = null;
+    for (let widget of this.widgets) {
+      if (widget.name === path[0]) {
+        matched = widget;
+        break;
+      }
+    }
+    if (matched && path.length > 1) {
+      if (matched.getWidget) {
+        return matched.getWidget(path.slice(1));
+      } else {
+        return null;
+      }
+    } else {
+      return matched;
+    }
+  }
+
+  value() {
+    let blob = {};
+    for (let widget of this.widgets) {
+      blob[widget.name] = widget.value();
+    }
+    return blob;
+  }
+
+  setValue(data) {
+    if (data) {
+      for (let widget of this.widgets) {
+        if (data[widget.name]) {
+          widget.setValue(data[widget.name]);
+        } else {
+          widget.clear();
+        }
+      }
+    } else {
+      this.clear();
+    }
+  }
+
+  clear() {
+    for (let widget of this.widgets) {
+      widget.clear();
+    }
+  }
+
+  attach(fn) {
+    if ($("#" + this.name).length > 0) {
+      console.log("#" + this.name + " already attached");
+      return;
+    }
+    let node = $("<div id='" + this.name + "'></div>");
+    for (let widget of this.widgets) {
+      widget.attach(widget => node.append(widget));
+    }
+
+    fn(node);
+  }
+}
+
+class RepeatedLabelWidget {
+  constructor(widget, useMap) {
+    this.name = widget.name;
+    this.widget = widget;
+    this.useMap = useMap;
+    this.data = useMap? {} : [];
+    this.key = null;
+  }
+
+  setKey(key) {
+    this.key = key;
+    if (key != undefined) {
+      this.__label.text(this.name + ': ' + key);
+    } else {
+      this.__label.text(this.name);
+    }
+    this.widget.setValue(this.data[this.key]);
+  }
+
+  value() {
+    return this.data;
+  }
+
+  setValue(data) {
+    this.data = data;
+    if (this.key != null) {
+      this.widget.setValue(this.data[this.key]);
+    }
+  }
+
+  save() {
+    if (this.key != null) {
+      this.data[this.key] = this.widget.value();
+    }
+  }
+
+  clearEntry() {
+    this.widget.clear();
+    this.save();
+  }
+
+  clear() {
+    this.data = this.useMap? {} : [];
+    this.widget.clear();
+    this.key = null;
+  }
+
+  attach(fn) {
+    this.__label = $('<div></div>').text(this.name);
+    this.widget.attach(node => {
+      node.prepend(this.__label);
+      fn(node);
+    });
+  }
+}
+
+
 class ProgressBar {
   constructor() {
     this._dirty = true;
@@ -274,16 +423,7 @@ class LabelInterface {
     this.progress = new ProgressBar();
     this.submit = new Button("Next", true);
 
-    this.widgets = [];
-    for (let key of Object.keys(schema)) {
-      if (schema[key].type === "multilabel") {
-        this.widgets.push(new MultiLabelWidget(key));
-      } else if (schema[key].type === "text") {
-        this.widgets.push(new TextWidget(key));
-      } else {
-        console.error("Could not add widget for type " + schema[key].type);
-      }
-    }
+    this.widget = new ComboLabelWidget("interface", schema);
 
     let self = this;
     // Hook up progress bar to change document.
@@ -296,11 +436,8 @@ class LabelInterface {
     this.submit.listeners.push(submit => {
       if (!submit) return;
 
-      let blob = {};
+      let blob = self.widget.value();
       blob["_idx"] = self.progress.value() - 1;
-      for (let widget of self.widgets) {
-        blob[widget.name] = widget.value();
-      }
       console.log(blob);
 
       $.ajax({
@@ -317,6 +454,10 @@ class LabelInterface {
     });
   }
 
+  getIdx(idx) {
+    return this.progress.value();
+  }
+
   setIdx(idx) {
     let self = this;
 
@@ -331,13 +472,7 @@ class LabelInterface {
           method: "get",
           dataType: "json",
           success: data => {
-            for (let widget of self.widgets) {
-              if (data[widget.name]) {
-                widget.setValue(data[widget.name]);
-              } else {
-                widget.clear();
-              }
-            }
+            self.widget.setValue(data);
           },
         });
       } else {
@@ -351,21 +486,193 @@ class LabelInterface {
       console.log("#interface already attached");
       return;
     }
-    let node = $("<div id='interface'></div>");
-    this.progress.attach(widget => node.append(widget));
-    for (let widget of this.widgets) {
-      widget.attach(widget => node.append(widget));
-    }
-    this.submit.attach(widget => node.append(widget));
-
-    fn(node);
+    let self = this;
+    this.widget.attach(node => {
+      self.progress.attach(widget => node.prepend(widget));
+      self.submit.attach(widget => node.append(widget));
+      fn(node);
+    });
   }
 }
 
-function fex_init(root, schema) {
+class SearchWidget {
+  constructor(labelInterface) {
+     this.filtered_indices = null;
+     this.search_text = null;
+     this.labelInterface = labelInterface;
+  }
+
+  gotoPrev() {
+    let self = this;
+    const idx = self.labelInterface.getIdx();
+    if (self.filtered_indices && self.filtered_indices.length) {
+      const fidx = self.filtered_indices.findIndex(function(x) { return x >= (idx-1); });
+      // console.log('got index ' + fidx, idx);
+      if (fidx > 0) {
+        self.labelInterface.setIdx(self.filtered_indices[fidx-1]+1);
+      } else {
+        self.labelInterface.setIdx(self.filtered_indices[self.filtered_indices.length-1]+1);
+      }
+    } else {
+      self.labelInterface.setIdx(idx-1);
+    }
+  }
+
+  gotoNext() {
+    let self = this;
+    const idx = self.labelInterface.getIdx();
+    if (self.filtered_indices && self.filtered_indices.length) {
+      const fidx = self.filtered_indices.findIndex(function(x) { return x > (idx-1); });
+      // console.log('got index ' + fidx, idx);
+      if (fidx >= 0) {
+        self.labelInterface.setIdx(self.filtered_indices[fidx]+1);
+      } else {
+        self.labelInterface.setIdx(self.filtered_indices[0]+1);
+      }
+    } else {
+      self.labelInterface.setIdx(idx+1);
+    }
+  }
+
+  search(search_text) {
+    let self = this;
+    if (search_text != undefined) {
+      self.__searchTextbox.val(search_text);
+    } else {
+      search_text = self.__searchTextbox.val();
+    }
+    if (search_text.length > 0) {
+        console.log('searching for ', search_text);
+        $.ajax({
+          url: "/search/",
+          contentType: "application/json",
+          method: "post",
+          data: JSON.stringify({ query: search_text }),
+          dataType: "json",
+          success: function(data) {
+            console.log('got', data);
+            self.filtered_indices = data;
+            // console.log(filtered_indices);
+            self.search_text = search_text;
+            if (self.filtered_indices && self.filtered_indices.length) {
+              self.labelInterface.setIdx(self.filtered_indices[0]+1);
+              // TODO: don't peak!s
+              var total = self.labelInterface.progress.elem().attr('max');
+              self.__messageElement.text('Matched ' + self.filtered_indices.length + '/' + total);
+            } else {
+              self.__messageElement.text('No matches');
+            }
+          }
+        });
+    } else {
+      this.clear();
+      self.search_text = search_text;
+    }
+  }
+
+  clear() {
+    this.filtered_indices= null;
+    self.__messageElement.text('');
+  }
+
+  attach(fn) {
+    if ($("#searchForm").length > 0) {
+      console.log("#searchForm already attached");
+      return;
+    }
+
+    let self = this;
+    let div = $('<div></div>');
+    let form = $('<div class="form-inline" id="searchForm"/>');
+    let inputGroup = $('<div class="input-group mb-2 mr-sm-2" />');
+    form.append(inputGroup);
+
+    let filterButton = $('<span class="input-group-text"/>').text('Filter')
+      .click(event => self.search());
+    inputGroup.append(
+      $('<div class="input-group-prepend" style="cursor: default;"/>').append(filterButton)
+    );
+    let searchTextbox = $('<input type="text" id="search" class="form-control" />')
+      .change(event => self.search());
+    inputGroup.append(searchTextbox);
+    self.__searchTextbox = searchTextbox;
+
+    let leftButton = $('<span class="oi oi-chevron-left" title="chevron left" aria-hidden="true" />')
+      .click(event => self.gotoPrev());
+    let rightButton = $('<span class="oi oi-chevron-right" title="chevron right" aria-hidden="true" />')
+      .click(event => self.gotoNext());
+    inputGroup.append(
+      $('<div class="input-group-append" />')
+        .append($('<span class="input-group-text"/>').append(leftButton))
+        .append($('<span class="input-group-text"/>').append(rightButton)));
+    let messageElement = $('<div id="matched" />');
+    self.__messageElement = messageElement;
+
+    div.append(form);
+    div.append(messageElement);
+
+    window.addEventListener("keyup", function(event) {
+      var tagName = (event.target || event.srcElement).tagName;
+      if (tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA') {
+        return;
+      }
+      if (event.keyCode === 78 /* 'n' */ ) {
+        self.gotoNext();
+      } else if (event.keyCode === 80 /* 'p' */ ) {
+        self.gotoPrev();
+      }
+    });
+
+    fn(div);
+  }
+}
+
+function fex_init(root, schema, options) {
   let interface = new LabelInterface(schema);
   interface.attach(node => root.append(node));
   interface.setIdx(1);
+  if (options && options.search) {
+    let searchWidget = new SearchWidget(interface);
+    searchWidget.attach(node => options.search.parent.append(node));
+  }
+  window.addEventListener('message', function(event) {
+    var message = JSON.parse(event.data);
+    if (message.action === 'gotoItem') {
+      interface.setIdx(message.idx);
+    } else if (message.action === 'gotoPrevFilteredItem' && searchWidget) {
+      searchWidget.gotoPrev();
+    } else if (message.action === 'gotoNextFilteredItem' && searchWidget) {
+      searchWidget.gotoNext();
+    } else if (message.action === 'setAnnotationFieldId') {
+      let widget = interface.widget.getWidget(message.field);
+      if (widget) {
+        widget.setKey(message.id);
+      } else {
+        console.warn('Field ' + message.field + ' not found');
+      }
+    } else if (message.action === 'makeCard') {
+      let element = $(message.element);
+      if (!element.hasClass('card')) {
+        element.addClass('card');
+      }
+      children = element.children();
+      if (children.length > 1) {
+        let div = $('<div class="card-body"></div>');
+        for (child of children) {
+          div.append(child);
+        }
+        element.append(div);
+      }
+    } else if (message.action === 'positionElement') {
+      let element = $(message.element);
+      $('body').append(element);
+      element.css("position", "absolute");
+      element.css("top", message.position.y);
+      element.css("left", message.position.x);
+    } else {
+      console.error('Unsupported message', message);
+    }
+  },false);
 
   $('iframe').on('load', evt => resize(evt.target));
 }

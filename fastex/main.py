@@ -40,6 +40,7 @@ def serve(data, template=None, port=8080, annotation_schema=None, labels=[], que
             t = f.get('type')
             if t in basic_types and f['name'] not in schema_types:
                 schema_types[f['name']] = f
+        # print(json.dumps(schema_types, indent=4, separators=(',', ': ')))
         def convert_fields(fields):
             res = {}
             for f in fields:
@@ -47,22 +48,26 @@ def serve(data, template=None, port=8080, annotation_schema=None, labels=[], que
                 if t in basic_types:
                     # okay
                     if t == 'record':
-                        f = copy.copy(f)
+                        f = copy.deepcopy(f)
                         f['fields'] = convert_fields(f.get('fields'))
                     res[f['name']] = f
                 elif t in schema_types:
-                    f = copy.copy(f)
-                    f['type'] = schema_types[t]
+                    f = copy.deepcopy(f)
+                    f['type'] = copy.deepcopy(schema_types[t])
                     if f['type'].get('type') == 'record':
                         f['type']['fields'] = convert_fields(f['type'].get('fields'))
                     res[f['name']] = f
                 else:
                     logger.warning("Unsupported type {}".format(t))
             return res
-        schema_fields = convert_fields(annotation_schema.get('fields'))
+        # print(json.dumps(schema_types, indent=4, separators=(',', ': ')))
+        schema_fields = { f['name']: f for f in annotation_schema.get('fields') }
+        schema_fields_expanded = convert_fields(copy.deepcopy(annotation_schema.get('fields')))
+        # print(json.dumps(annotation_schema.obj, indent=4, separators=(',', ': ')))
     else:
         schema_types = annotation_schema.obj
         schema_fields = annotation_schema.obj
+        schema_fields_expanded = annotation_schema.obj
 
     # Start server.
     app = Bottle()
@@ -86,7 +91,7 @@ def serve(data, template=None, port=8080, annotation_schema=None, labels=[], que
     @app.get('/label/')
     @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
     def label():
-        return {"schema": schema_fields}
+        return {"schema": schema_fields_expanded}
 
     # API
     @app.get('/autocomplete/')
@@ -110,21 +115,56 @@ def serve(data, template=None, port=8080, annotation_schema=None, labels=[], que
         obj = bottle.request.json
         idx = obj["_idx"]
 
-        for key, value in obj.items():
-            if key.startswith("_"): continue
-            if key not in schema: continue
-
-            if schema_types[key].get("type") == "multilabel":
+        # print(json.dumps(obj, indent=4, separators=(',', ': ')))
+        # basic_types = ["text", "multilabel", "multiclass", "record"]
+        def update_field_values(value, field_type):
+            if field_type.get("type") == "multilabel":
                 vs = prune_empty(value)
-                labels[idx][key] = vs
-                schema_types[key]["values"] = sorted(set(schema[key]["values"] + vs))
-            elif schema_types[key].get("type") == "multiclass":
-                labels[idx][key] = value
-                schema_types[key]["values"] = sorted(set(schema[key]["values"] + [value]))
-            elif schema_types[key].get("type") == "text":
-                labels[idx][key] = value
+                field_type["values"] = sorted(set(field_type["values"] + vs))
+                return vs
+            elif field_type.get("type") == "multiclass":
+                field_type["values"] = sorted(set(field_type["values"] + [value]))
+                return value
+            elif field_type.get("type") == "text":
+                return value
+            elif field_type.get("type") == "record":
+                output = {}
+                process_record(value, output, field_type.get("fields"))
+                return output
             else:
-                raise ValueError("Not supported type.")
+                raise ValueError("Not supported type {}.".format(field_type.get("type")))
+        def process_record(input, output, known_fields):
+            if isinstance(known_fields, list):
+                known_fields = { f.get('name') : f for f in known_fields }
+            for key, value in input.items():
+                if key.startswith("_"): continue
+                if key not in known_fields:
+                    print('dropping {} not in known_fields {}'.format(key, known_fields))
+                    continue
+
+                field = known_fields[key]
+                field_type_name = field.get("type")
+                if isinstance(field_type_name, dict):
+                    field_type = field_type_name
+                else:
+                    field_type = schema_types.get(field_type_name, field)
+                # print('field type')
+                # print(json.dumps(field_type, indent=4, separators=(',', ': ')))
+                if field.get("repeated", False):
+                    if  field.get("useMap", False):
+                        output[key] = {}
+                        for i,v in value.items():
+                            output[key][i] = update_field_values(v, field_type)
+                    else:
+                        output[key] = []
+                        for i,v in enumerate(value):
+                            output[key][i] = update_field_values(v, field_type)
+                else:
+                    output[key] = update_field_values(value, field_type)
+            return output
+
+        process_record(obj, labels[idx], schema_fields)
+        # print(json.dumps(schema_types, indent=4, separators=(',', ': ')))
         labels.save()
         annotation_schema.save()
 

@@ -18,6 +18,16 @@ function addInputGroup(label, input) {
   return ret;
 }
 
+function makeid(length) {
+  var text = "";
+  var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+  for (var i = 0; i < length; i++)
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+
+  return text;
+}
+
 // Widgets
 class Button {
   constructor(name, isSubmit) {
@@ -47,6 +57,7 @@ class Button {
 class TextWidget {
   constructor(name) {
     this.name = name;
+    this.id = name + '_' + makeid(5);
     this.listeners = [];
 
     this.handleChange = this.handleChange.bind(this);
@@ -58,8 +69,8 @@ class TextWidget {
   }
 
   attach(fn) {
-    if ($("#" + this.name).length > 0) {
-      console.log("Already attached " + this.name + "doing nothing.");
+    if ($("#" + this.id).length > 0) {
+      console.log("Already attached " + this.id + "doing nothing.");
       return;
     }
     const self = this;
@@ -67,14 +78,14 @@ class TextWidget {
     let obj = addInputGroup(
       undefined,
       // $("<label for='"+this.name+"'>"+this.name+"</label>"),
-      $("<textarea id='"+this.name+"' class='form-control' placeholder='type " + this.name + "(s) here'></textarea>")
+      $("<textarea id='"+this.id+"' class='form-control' placeholder='type " + this.name + "(s) here'></textarea>")
         .on("change", this.handleChange)
     );
     fn(obj);
   }
 
   elem() {
-    return $("#" + this.name);
+    return $("#" + this.id);
   }
 
   value() {
@@ -84,6 +95,11 @@ class TextWidget {
 
   setValue(val) {
     this.elem().val(val);
+  }
+
+  setFocus() {
+    this.elem().focus();
+    //this.elem().click();
   }
 
   clear() {
@@ -97,6 +113,7 @@ class TextWidget {
 class MultiLabelWidget {
   constructor(name) {
     this.name = name;
+    this.id = name + '_' + makeid(5);
     this._choices = [];
     this._dirty = true;
     this.listeners = [];
@@ -114,7 +131,7 @@ class MultiLabelWidget {
   }
 
   attach(fn) {
-    if ($("#" + this.name).length > 0) {
+    if ($("#" + this.id).length > 0) {
       console.log("Already attached " + this.name + "doing nothing.");
       return;
     }
@@ -123,7 +140,7 @@ class MultiLabelWidget {
     let obj = addInputGroup(
       undefined,
       // $("<label for='"+this.name+"'>"+this.name+"</label>"),
-      $("<input type='text' id='"+this.name+"' class='form-control' placeholder='type " + this.name + "(s) here' />")
+      $("<input type='text' id='"+this.id+"' class='form-control' placeholder='type " + this.name + "(s) here' />")
         // don't navigate away from the field on tab when selecting an item
         .on( "keydown", function( event ) {
           if ( event.keyCode === $.ui.keyCode.TAB &&
@@ -182,7 +199,7 @@ class MultiLabelWidget {
   }
 
   elem() {
-    return $("#" + this.name);
+    return $("#" + this.id);
   }
 
   value() {
@@ -193,6 +210,12 @@ class MultiLabelWidget {
   setValue(vs) {
     console.log(vs);
     this.elem().val(vs.join( ", " ));
+  }
+
+  setFocus() {
+    //this.elem().focus();
+    this.elem().click();
+    console.log('set focus', this.name, this.id);
   }
 
   clear() {
@@ -272,10 +295,18 @@ class ComboLabelWidget {
     }
   }
 
+  setFocus() {
+    this.widgets[0].setFocus();
+  }
+
   clear() {
     for (let widget of this.widgets) {
       widget.clear();
     }
+  }
+
+  dirty() {
+    this.widgets.forEach(w => w.dirty());
   }
 
   attach(fn) {
@@ -311,6 +342,10 @@ class RepeatedLabelWidget {
     this.widget.setValue(this.data[this.key]);
   }
 
+  setFocus() {
+    this.widget.setFocus();
+  }
+
   value() {
     return this.data;
   }
@@ -339,10 +374,17 @@ class RepeatedLabelWidget {
     this.key = null;
   }
 
+  dirty() {
+    this.clear();
+    this.widget.dirty();
+  }
+
   attach(fn) {
+    let self = this;
     this.__label = $('<div></div>').text(this.name);
     this.widget.attach(node => {
-      node.prepend(this.__label);
+      node.prepend(self.__label);
+      node.focusout(function() { console.log('focusout'); self.save(); });
       fn(node);
     });
   }
@@ -447,7 +489,7 @@ class LabelInterface {
         data: JSON.stringify(blob),
         dataType: "json",
         success: function(data) {
-          self.widgets.forEach(w => w.dirty());
+          self.widget.dirty();
           self.setIdx(self.progress.value() + 1);
         }
       });
@@ -627,14 +669,7 @@ class SearchWidget {
   }
 }
 
-function fex_init(root, schema, options) {
-  let interface = new LabelInterface(schema);
-  interface.attach(node => root.append(node));
-  interface.setIdx(1);
-  if (options && options.search) {
-    let searchWidget = new SearchWidget(interface);
-    searchWidget.attach(node => options.search.parent.append(node));
-  }
+function attach_child_message_handler(interface, searchWidget) {
   window.addEventListener('message', function(event) {
     var message = JSON.parse(event.data);
     if (message.action === 'gotoItem') {
@@ -643,10 +678,24 @@ function fex_init(root, schema, options) {
       searchWidget.gotoPrev();
     } else if (message.action === 'gotoNextFilteredItem' && searchWidget) {
       searchWidget.gotoNext();
+    } else if (message.action === 'saveAnnotation') {
+      if (message.field) {
+        let widget = interface.widget.getWidget(message.field);
+        if (widget) {
+          if (widget.save) {
+            widget.save();
+          }
+        } else {
+          console.warn('Field ' + message.field + ' not found');
+        }
+      } else {
+        //interface.widget.save();
+      }
     } else if (message.action === 'setAnnotationFieldId') {
       let widget = interface.widget.getWidget(message.field);
       if (widget) {
         widget.setKey(message.id);
+        widget.setFocus();
       } else {
         console.warn('Field ' + message.field + ' not found');
       }
@@ -655,7 +704,7 @@ function fex_init(root, schema, options) {
       if (!element.hasClass('card')) {
         element.addClass('card');
       }
-      children = element.children();
+      let children = element.children();
       if (children.length > 1) {
         let div = $('<div class="card-body"></div>');
         for (child of children) {
@@ -673,6 +722,19 @@ function fex_init(root, schema, options) {
       console.error('Unsupported message', message);
     }
   },false);
+
+}
+
+function fex_init(root, schema, options) {
+  let interface = new LabelInterface(schema);
+  let searchWidget = null;
+  interface.attach(node => root.append(node));
+  interface.setIdx(1);
+  if (options && options.search) {
+    searchWidget = new SearchWidget(interface);
+    searchWidget.attach(node => options.search.parent.append(node));
+  }
+  attach_child_message_handler(interface, searchWidget);
 
   $('iframe').on('load', evt => resize(evt.target));
 }

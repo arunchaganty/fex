@@ -98,8 +98,9 @@ class TextWidget {
   }
 
   setFocus() {
-    this.elem().focus();
-    //this.elem().click();
+    // console.log('set focus', this.name);
+    //this.elem().focus();
+    this.elem().click();
   }
 
   clear() {
@@ -208,14 +209,13 @@ class MultiLabelWidget {
   }
 
   setValue(vs) {
-    console.log(vs);
     this.elem().val(vs.join( ", " ));
   }
 
   setFocus() {
-    //this.elem().focus();
+    //console.log('set focus', this.name, this.id);
+    //this.elem().get(0).focus();
     this.elem().click();
-    console.log('set focus', this.name, this.id);
   }
 
   clear() {
@@ -384,7 +384,7 @@ class RepeatedLabelWidget {
     this.__label = $('<div></div>').text(this.name);
     this.widget.attach(node => {
       node.prepend(self.__label);
-      node.focusout(function() { console.log('focusout'); self.save(); });
+      node.focusout(function() { self.save(); });
       fn(node);
     });
   }
@@ -669,6 +669,23 @@ class SearchWidget {
   }
 }
 
+function attach_key_listeners(options) {
+  window.addEventListener("keyup", function (event) {
+    var tagName = (event.target || event.srcElement).tagName;
+    if (tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA') {
+      if (event.keyCode === 13) {
+        var focusable = $('input,select,textarea').filter(':visible');
+        // console.log(focusable, this, focusable.index($(event.target)));
+        var next = focusable.eq(focusable.index($(event.target)) + 1);
+        if (next.length) {
+          next.focus();
+        }
+        return false;
+      }
+    }
+  });
+}
+
 function attach_child_message_handler(interface, searchWidget) {
   window.addEventListener('message', function(event) {
     var message = JSON.parse(event.data);
@@ -734,6 +751,7 @@ function fex_init(root, schema, options) {
     searchWidget = new SearchWidget(interface);
     searchWidget.attach(node => options.search.parent.append(node));
   }
+  attach_key_listeners();
   attach_child_message_handler(interface, searchWidget);
 
   $('iframe').on('load', evt => resize(evt.target));

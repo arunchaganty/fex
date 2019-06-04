@@ -21,149 +21,124 @@ from .search import find_record_indices
 
 logger = logging.getLogger(__name__)
 
+
 def prune_empty(lst):
     return [elem for elem in lst if elem]
 
-def serve(data, template=None, port=8080, schema=None, labels=[], query_schema=None):
+
+def validate_annotation(schema, ann):
+    for key, value in ann.items():
+        if key not in schema:
+            abort(400, f"Invalid field provided {key}")
+        # TODO: Further type validation.                
+
+
+def serve(data, template=None, port=8080, schema=None):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-    if not template or not os.path.exists(template):
+    if not template:
         template = os.path.join(TEMPLATE_DIR, "template.html")
+    # Inititalize template
+    with open(template) as f:
+        template = Template(f.read())
 
     # Start server.
     app = Bottle()
 
-    # Initialize labels.
-    if len(labels) < len(data):
-        labels.extend([{} for _ in range(len(data) - len(labels))])
-    assert len(labels) == len(data)
-
-    label_values = defaultdict(set)
-    for obj in labels:
-        for key, vs in obj.items():
-            label_values[key].update(vs)
-
-    @app.get('/view/')
-    @jinja2_view('view.html', template_lookup=[TEMPLATE_DIR])
-    def view():
-        return {'data_len': len(data)}
-
-    @app.get('/')
-    @app.get('/label/')
-    @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
-    def label():
-        return {"schema": schema.obj}
-
-    # API
-    @app.get('/autocomplete/')
-    def autocomplete():
-        name = bottle.request.GET.get("name")
-
-        bottle.response.content_type = 'application/json'
-        ret = []
-        if name in schema and schema[name].get("type") in ["multiclass", "multilabel"]:
-            ret = sorted(schema[name]["values"])
-        print(ret)
-        return json.dumps(ret)
-
-    @app.get('/count/')
-    def count():
-        bottle.response.content_type = 'application/json'
-        return json.dumps(len(data))
-
-    @app.post('/update/')
-    def update():
-        obj = bottle.request.json
-        idx = obj["_idx"]
-
-        update = {}
-        for key, value in obj.items():
-            if key.startswith("_"): continue
-            if key not in schema: continue
-
-            if schema[key].get("type") == "multilabel":
-                vs = prune_empty(value)
-                labels[idx][key] = vs
-                schema[key]["values"] = sorted(set(schema[key]["values"] + vs))
-            elif schema[key].get("type") == "multiclass":
-                labels[idx][key] = value
-                schema[key]["values"] = sorted(set(schema[key]["values"] + [value]))
-            elif schema[key].get("type") == "text":
-                labels[idx][key] = value
-            else:
-                raise ValueError("Not supported type.")
-        labels.save()
-        schema.save()
-
-        bottle.response.content_type = 'application/json'
-        return json.dumps(True)
-
-    @app.get('/get/<idx:int>')
-    def get(idx):
-        assert idx >= 0 and idx < len(labels)
-
-        bottle.response.content_type = 'application/json'
-        return json.dumps(labels[idx])
-
-    @app.get('/search/<query>')
-    @app.post('/search/')
-    def search(query=None):
-        if query is None:
-            query_obj = bottle.request.json
-            query = query_obj.get('query')
-        results = find_record_indices(data, query, query_schema)
-        bottle.response.content_type = 'application/json'
-        return json.dumps(results)
+    # External endpoints
 
     @app.get('/static/<path:path>')
     def static(path):
         return static_file(path, STATIC_DIR)
 
-    @app.get('/_/<idx:int>')
-    @jinja2_view(template)
-    def render(idx=0):
-        idx = int(idx)
+    @app.get('/label/<idx:int>')
+    @app.get('/label/')
+    @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
+    def label(idx: int = 0):
         if idx > len(data):
-            return bottle.redirect("/_/0")
-        obj = data[idx]
+            abort(400, "No more data")
+        return {"obj": obj}
 
-        return {'obj': obj}
+    @app.get('/count/')
+    def count():
+        return {"value": len(data)}
+
+    @app.get('/view/')
+    @app.get('/')
+    @jinja2_view('view.html', template_lookup=[TEMPLATE_DIR])
+    def view():
+        return {'count': len(data)}
+
+    # API
+    #@app.get('/autocomplete/')
+    #def autocomplete():
+    #    name = bottle.request.GET.get("name")
+
+    #    bottle.response.content_type = 'application/json'
+    #    ret = []
+    #    if name in schema and schema[name].get("type") in ["multiclass", "multilabel"]:
+    #        ret = sorted(schema[name]["values"])
+    #    print(ret)
+    #    return json.dumps(ret)
+    @app.get('/schema/')
+    def schema():
+        return schema.obj
+
+    @app.get('/render/')
+    def render():
+        start = int(bottle.request.query.get("start", 0))
+        count = int(bottle.request.query.get("count", 10))
+        if start > len(data):
+            abort(400, "No more data")
+        return {"values": [template.render(obj=obj) for obj in data[start: start+count]]}
+
+    @app.post('/update/<idx:int>')
+    def update(idx):
+        obj = bottle.request.json
+
+        # Some server-side validation
+        _fex = obj["_fex"]
+        del obj["_fex"]
+        if obj != data[idx]:
+            abort(400, "Provided response has an object that does not correspond to this idx")
+        validate_annotation(schema, _fex)
+
+        # Update this value.
+        obj["_fex"] = _fex
+        data[idx] = obj
+        data.save()
+
+        return True
+
+    # TODO: reimplement search
+    # @app.get('/search/<query>')
+    # @app.post('/search/')
+    # def search(query=None):
+    #     if query is None:
+    #         query_obj = bottle.request.json
+    #         query = query_obj.get('query')
+    #     results = find_record_indices(data, query, query_schema)
+    #     bottle.response.content_type = 'application/json'
+    #     return json.dumps(results)
 
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
     app.run(reloader=True, port=port, debug=True)
 
 
 def do_init(args):
-    template_path = os.path.join(os.path.dirname(__file__), "template.html")
-    shutil.copy(template_path, args.template)
+    for f in ["template.html", "config.yaml"]:
+        shutil.copy(os.path.join(os.path.dirname(__file__), f), f)
 
-
-def do_view(args):
+def do_serve(args):
     # 0. Find experiment dir.
-    data = load_jsonl(args.input)
+    data = FileBackedJsonList(args.input)
+    # TODO: save a backup
     logger.info("Serving %d inputs ", len(data))
-
-    if args.query_schema:
-        from .search import QuerySchema
-        query_schema = QuerySchema(FileBackedJson(args.query_schema))
-    else:
-        query_schema = None
-
-    serve(data, args.template, args.port, query_schema=query_schema)
-
-
-def do_label(args):
-    # 0. Find experiment dir.
-    with args.input:
-        data = load_jsonl(args.input)
-    logger.info("Serving %d inputs ", len(data))
-
-    labels = FileBackedJsonList(args.output)
     schema = FileBackedJson(args.schema)
 
-    serve(data, args.template, args.port, schema, labels)
+    serve(data, template=args.template, port=args.port, schema=schema)
 
-def do_save(args):
+def do_export(args):
     # 0. Find experiment dir.
     data = load_jsonl(args.input)
     logger.info("Saving %d inputs ", len(data))
@@ -189,30 +164,22 @@ def main():
 
     subparsers = parser.add_subparsers()
     command_parser = subparsers.add_parser('init', help='Initialize a new experiment of a particular type')
-    command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.set_defaults(func=do_init)
 
-    command_parser = subparsers.add_parser('view', help='View an experiment')
-    command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
-    command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
-    command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
-    command_parser.add_argument('-q', '--query_schema', type=str, help="Schema for querying")
-    command_parser.set_defaults(func=do_view)
-
-    command_parser = subparsers.add_parser('label', help='Label an experiment')
-    command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
-    command_parser.add_argument('-o', '--output', type=str, default="labels.jsonl", help="Data file with a list of JSON lines")
+    # TODO: make this the single default "run" entry point.
+    command_parser = subparsers.add_parser('serve', help='Label an experiment')
+    command_parser.add_argument('-i', '--input', type=str, default="data.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-s', '--schema', type=str, default="schema.json", help="Template file to write")
     command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
-    command_parser.set_defaults(func=do_label)
+    command_parser.set_defaults(func=do_serve)
 
 
-    command_parser = subparsers.add_parser('save', help='Saves the rendered pages')
+    command_parser = subparsers.add_parser('export', help='Saves the rendered pages')
     command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
     command_parser.add_argument('-o', '--output', type=str, default="rendered", help="Output directory containing the rendered HTML.")
-    command_parser.set_defaults(func=do_save)
+    command_parser.set_defaults(func=do_export)
 
 
     args = parser.parse_args()

@@ -84,3 +84,7 @@ class FileBackedJsonList():
 
     def __getitem__(self, idx):
         return self.objs[idx]
+
+    def __setitem__(self, idx, obj):
+        self.objs[idx] = obj
+        self.save()

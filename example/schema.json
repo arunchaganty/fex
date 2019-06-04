@@ -1,18 +1,27 @@
 {
-  "intent": {
-      "type": "multilabel",
-      "values": [
-          "findInspections",
-          "updateDetails(address)",
-          "updateDetails(?)",
-          "requestPolicy"
-      ]
-  },
-  "language": {
-      "type": "multilabel",
-      "values": []
-  },
-  "notes": {
-      "type": "text"
-  }
+    "fields": {
+        "intent": {
+            "type": "multiclass",
+            "editable": false,
+            "values": [
+                "confim",
+                "cancel",
+                "reschedule",
+                "late",
+                "autoreply",
+                "none"
+            ],
+            "bindings": {
+                "j": "confim",
+                "k": "cancel",
+                "l": "reschedule",
+                ";": "late",
+                "h": "autoreply",
+                "<space>": "none"
+            }
+        },
+        "notes": {
+            "type": "text"
+        }
+    }
 }

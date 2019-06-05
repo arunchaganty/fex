@@ -193,7 +193,11 @@ class LabelInterface {
                 }
             }
             if (bindings && bindings[value]) {
-              btn.append($("<span class='badge badge-primary'>").text(bindings[value]));
+              let shortcut = bindings[value];
+              if (shortcut == " ") {
+                shortcut = "<S>";
+              }
+              btn.append($("<span class='badge badge-primary'>").text(shortcut));
             }
             elem.find("div").append(btn);
 

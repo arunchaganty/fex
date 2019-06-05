@@ -1,0 +1,29 @@
+{
+    "fields": {
+        "intent": {
+            "type": "multiclass",
+            "editable": false,
+            "values": [
+                "confirm",
+                "cancel",
+                "reschedule",
+                "late",
+                "autoreply",
+                "none"
+            ],
+            "bindings": {
+                "confirm": "j",
+                "cancel": "k",
+                "reschedule": "l",
+                "late": ";",
+                "autoreply": "h",
+                "none": " "
+            }
+        },
+        "notes": {
+            "type": "text",
+            "optional": true
+        }
+    }
+}
+

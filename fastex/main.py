@@ -105,7 +105,6 @@ def serve(data, template=None, port=8080, schema=None):
         validate_annotation(schema, obj["_fex"])
 
         data[idx] = obj
-        data.save()
         return {}
 
     # TODO: reimplement search
@@ -121,15 +120,16 @@ def serve(data, template=None, port=8080, schema=None):
 
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
     app.run(reloader=True, port=port, debug=True)
+    data.save()
 
 
 def do_init(args):
-    for f in ["template.html", "config.yaml"]:
-        shutil.copy(os.path.join(os.path.dirname(__file__), f), f)
+    for f in ["template.html", "schema.json"]:
+        shutil.copy(os.path.join(os.path.dirname(__file__), "templates", f), f)
 
 def do_serve(args):
     # 0. Find experiment dir.
-    data = FileBackedJsonList(args.input)
+    data = FileBackedJsonList(args.input, auto_save=False)
     # TODO: save a backup
     logger.info("Serving %d inputs ", len(data))
     schema = FileBackedJson(args.schema)

@@ -60,9 +60,10 @@ class FileBackedJson():
         return iter(self.obj)
 
 class FileBackedJsonList():
-    def __init__(self, fname):
+    def __init__(self, fname, auto_save=True):
         self.fname = fname
         self.reload()
+        self.auto_save = auto_save
 
     def save(self):
         with open(self.fname, "w") as f:
@@ -80,11 +81,13 @@ class FileBackedJsonList():
 
     def extend(self, iterables):
         self.objs.extend(iterables)
-        self.save()
+        if self.auto_save:
+            self.save()
 
     def __getitem__(self, idx):
         return self.objs[idx]
 
     def __setitem__(self, idx, obj):
         self.objs[idx] = obj
-        self.save()
+        if self.auto_save:
+            self.save()

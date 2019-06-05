@@ -13,7 +13,7 @@ from collections import defaultdict
 import webbrowser
 
 import bottle
-from bottle import Bottle, jinja2_view, static_file
+from bottle import Bottle, jinja2_view, static_file, abort
 from jinja2 import Template
 
 from .util import save_jsonl, load_jsonl, FileBackedJson, FileBackedJsonList
@@ -28,7 +28,7 @@ def prune_empty(lst):
 
 def validate_annotation(schema, ann):
     for key, value in ann.items():
-        if key not in schema:
+        if key not in schema["fields"]:
             abort(400, f"Invalid field provided {key}")
         # TODO: Further type validation.                
 
@@ -51,23 +51,17 @@ def serve(data, template=None, port=8080, schema=None):
     def static(path):
         return static_file(path, STATIC_DIR)
 
-    @app.get('/label/<idx:int>')
-    @app.get('/label/')
-    @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
-    def label(idx: int = 0):
-        if idx > len(data):
-            abort(400, "No more data")
-        return {"obj": obj}
-
-    @app.get('/count/')
-    def count():
-        return {"value": len(data)}
-
     @app.get('/view/')
     @app.get('/')
     @jinja2_view('view.html', template_lookup=[TEMPLATE_DIR])
     def view():
-        return {'count': len(data)}
+        return {}
+    
+    @app.get('/label/')
+    @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
+    def label():
+        return {}
+
 
     # API
     #@app.get('/autocomplete/')
@@ -80,8 +74,12 @@ def serve(data, template=None, port=8080, schema=None):
     #        ret = sorted(schema[name]["values"])
     #    print(ret)
     #    return json.dumps(ret)
+    @app.get('/count/')
+    def count():
+        return {"value": len(data)}
+    
     @app.get('/schema/')
-    def schema():
+    def get_schema():
         return schema.obj
 
     @app.get('/render/')
@@ -90,25 +88,25 @@ def serve(data, template=None, port=8080, schema=None):
         count = int(bottle.request.query.get("count", 10))
         if start > len(data):
             abort(400, "No more data")
-        return {"values": [template.render(obj=obj) for obj in data[start: start+count]]}
+        return {
+                "html": [template.render(obj=obj) for obj in data[start: start+count]],
+                "obj": data[start: start+count],
+                }
 
-    @app.post('/update/<idx:int>')
+    @app.post('/update/<idx:int>/')
     def update(idx):
         obj = bottle.request.json
 
         # Some server-side validation
-        _fex = obj["_fex"]
-        del obj["_fex"]
-        if obj != data[idx]:
-            abort(400, "Provided response has an object that does not correspond to this idx")
-        validate_annotation(schema, _fex)
+        for key in obj:
+            if key == "_fex": continue
+            if obj[key] != data[idx][key]:
+                abort(400, "Provided response has an object that does not correspond to this idx")
+        validate_annotation(schema, obj["_fex"])
 
-        # Update this value.
-        obj["_fex"] = _fex
         data[idx] = obj
         data.save()
-
-        return True
+        return {}
 
     # TODO: reimplement search
     # @app.get('/search/<query>')

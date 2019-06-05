@@ -4,7 +4,7 @@
             "type": "multiclass",
             "editable": false,
             "values": [
-                "confim",
+                "confirm",
                 "cancel",
                 "reschedule",
                 "late",
@@ -12,16 +12,17 @@
                 "none"
             ],
             "bindings": {
-                "j": "confim",
-                "k": "cancel",
-                "l": "reschedule",
-                ";": "late",
-                "h": "autoreply",
-                "<space>": "none"
+                "confirm": "j",
+                "cancel": "k",
+                "reschedule": "l",
+                "late": ";",
+                "autoreply": "h",
+                "none": " "
             }
         },
         "notes": {
-            "type": "text"
+            "type": "text",
+            "optional": true
         }
     }
 }

@@ -9,6 +9,13 @@
 {% block content %}
 <div id="root">
 </div>
+
+<div id="templates" hidden>
+  <div class="card">
+    <div class="card-header"></div>
+    <div class="card-body"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block nav %}
@@ -44,18 +51,8 @@ class ViewInterface {
 
   _setupCallbacks() {
     const self = this;
-    $("#nav-prev").on("click", () => {
-      const [lower, upper] = self.range;
-      const count = upper - lower;
-      const newLower = Math.max(0, lower - count);
-      self.updateRange(newLower, count);
-    });
-    $("#nav-next").on("click", () => {
-      const [lower, upper] = self.range;
-      const count = upper - lower;
-      const newUpper = Math.min(self.count, upper+count);
-      self.updateRange(Math.max(0, newUpper-count), count);
-    });
+    $("#nav-prev").on("click", () => self.prev());
+    $("#nav-next").on("click", () => self.next());
     $("#nav-range").on("change", (evt) => {
       const value = evt.target.value;
       const parts = value.split("-");
@@ -64,7 +61,29 @@ class ViewInterface {
       const count = upper - lower;
       self.updateRange(lower, count);
     });
+
+    $('body').on("keydown", evt => {
+      console.log(evt.key);
+      if (evt.key === "ArrowLeft") self.prev();
+      else if (evt.key === "ArrowRight") self.next();
+    });
   }
+
+  next() {
+    const self = this;
+    const [lower, upper] = self.range;
+    const count = upper - lower;
+    const newUpper = Math.min(self.count, upper+count);
+    self.updateRange(Math.max(0, newUpper-count), count);
+  }
+  prev() {
+    const self = this;
+    const [lower, upper] = self.range;
+    const count = upper - lower;
+    const newLower = Math.max(0, lower - count);
+    self.updateRange(newLower, count);
+  }
+
 
   updateCount() {
     // Set up count in nav interface.
@@ -82,6 +101,15 @@ class ViewInterface {
     });
   }
 
+  renderTemplate(idx, body) {
+    const ret = $("#templates").find("div.card").clone();
+    ret.attr("id", "obj-" + idx);
+    ret.find("div.card-header").text("Element: " + (idx+1));
+    ret.find("div.card-body").html(body);
+
+    return ret;
+  }
+
   updateRange(start, count) {
     const self = this;
     // Handle arguments.
@@ -97,11 +125,8 @@ class ViewInterface {
       success: function(data) {
         // Clear root.
         self.elem.empty();
-        for (let i = 0; i < data.values.length; i++)  {
-          console.log(start);
-          console.log(count);
-          const html = $(data.values[i]);
-          html.attr("id", "obj-" + (start + i));
+        for (let i = 0; i < data.html.length; i++)  {
+          const html = self.renderTemplate(start + i, data.html[i]);
           self.elem.append(html);
         }
         $("#nav-range").val((start+1) + "-" + (start+count));

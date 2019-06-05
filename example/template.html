@@ -1,5 +1,4 @@
-<h1>{{obj.title}}</h1>
-<hr />
+<h5 class="card-title">{{obj.title}}</h5>
 
 {% for msg in obj.messages %}
 <div class="row d-flex {{ 'justify-content-begin' if msg.user == 'A' else 'justify-content-end' }}">

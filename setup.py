@@ -92,7 +92,7 @@ setup(
     # have to be included in MANIFEST.in as well.
     package_dir={'fastex': 'fastex'},
     package_data={
-        'fastex': ['view.html', 'template.html'],
+        'fastex': ['./fastex/templates/base.html'],
     },
 
     # Although 'package_data' is the preferred approach, in some case you may

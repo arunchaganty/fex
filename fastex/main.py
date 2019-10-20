@@ -163,7 +163,7 @@ def serve(data, template=None, port=8080, schema=None):
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
     # Spawn a custom file watcher
     if os.environ.get('BOTTLE_CHILD'):
-        bgcheck = _FileCheckerThread([template], 1)
+        bgcheck = _FileCheckerThread([template, schema.fname], 1)
         with bgcheck:
             app.run(reloader=True, port=port, debug=True)
         if bgcheck.status == 'reload':

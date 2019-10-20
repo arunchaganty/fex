@@ -4,6 +4,7 @@
 Turk experiment helper.
 """
 import os
+import time
 import sys
 import pdb
 import json
@@ -11,6 +12,8 @@ import shutil
 import logging
 from collections import defaultdict
 import webbrowser
+import threading
+import _thread as thread
 
 import bottle
 from bottle import Bottle, jinja2_view, static_file, abort
@@ -33,6 +36,45 @@ def validate_annotation(schema, ann):
         # TODO: Further type validation.                
 
 
+class _FileCheckerThread(threading.Thread):
+    """
+    Interrupt main-thread as soon as any of the given files have
+    changed.
+    """
+
+    def __init__(self, files_to_check, interval=1):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self.files_to_check = files_to_check
+        self.interval = interval
+        #: Is one of 'reload', 'error' or 'exit'
+        self.status = None
+
+    def run(self):
+        exists = os.path.exists
+        mtime = lambda p: os.stat(p).st_mtime
+        files = {path: mtime(path)
+                for path in self.files_to_check
+                if path and exists(path)}
+
+        # check in a loop
+        while not self.status:
+            for path, lmtime in list(files.items()):
+                if not exists(path) or mtime(path) > lmtime:
+                    self.status = 'reload'
+                    thread.interrupt_main()
+                    break
+            time.sleep(self.interval)
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, exc_type, *_):
+        if not self.status: self.status = 'exit'  # silent exit
+        self.join()
+        return exc_type is not None and issubclass(exc_type, KeyboardInterrupt)
+
+
 def serve(data, template=None, port=8080, schema=None):
     TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
     STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -40,7 +82,7 @@ def serve(data, template=None, port=8080, schema=None):
         template = os.path.join(TEMPLATE_DIR, "template.html")
     # Inititalize template
     with open(template) as f:
-        template = Template(f.read())
+        _template = Template(f.read())
 
     # Start server.
     app = Bottle()
@@ -89,7 +131,7 @@ def serve(data, template=None, port=8080, schema=None):
         if start > len(data):
             abort(400, "No more data")
         return {
-                "html": [template.render(obj=obj) for obj in data[start: start+count]],
+                "html": [_template.render(obj=obj) for obj in data[start: start+count]],
                 "obj": data[start: start+count],
                 }
 
@@ -119,7 +161,15 @@ def serve(data, template=None, port=8080, schema=None):
     #     return json.dumps(results)
 
     #webbrowser.open_new_tab('http://localhost:{}'.format(port))
-    app.run(reloader=True, port=port, debug=True)
+    # Spawn a custom file watcher
+    if os.environ.get('BOTTLE_CHILD'):
+        bgcheck = _FileCheckerThread([template], 1)
+        with bgcheck:
+            app.run(reloader=True, port=port, debug=True)
+        if bgcheck.status == 'reload':
+            sys.exit(3)
+    else:
+        app.run(reloader=True, port=port, debug=True)
     data.save()
 
 
@@ -164,7 +214,6 @@ def main():
     command_parser = subparsers.add_parser('init', help='Initialize a new experiment of a particular type')
     command_parser.set_defaults(func=do_init)
 
-    # TODO: make this the single default "run" entry point.
     command_parser = subparsers.add_parser('serve', help='Label an experiment')
     command_parser.add_argument('-i', '--input', type=str, default="data.jsonl", help="Data file with a list of JSON lines")
     command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")

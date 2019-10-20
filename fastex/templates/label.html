@@ -14,7 +14,7 @@
   <div id="card" class="card">
     <div class="card-header"></div>
     <div class="card-body"></div>
-    <ul class="list-group list-group-flush">
+    <ul class="list-group list-group-flush annotations">
     </ul>
   </div>
 
@@ -66,7 +66,7 @@ class LabelInterface {
 
     // Hook up callbacks.
     this._setupCallbacks();
-    
+
     this.updateIndex();
   }
 
@@ -160,7 +160,7 @@ class LabelInterface {
     ret.find("div.card-body").html(body);
 
     // Per template field.
-    const annotations = ret.find("ul.list-group");
+    const annotations = ret.find("ul.list-group.annotations");
     const ann = this.value._fex;
     for (let field in this.schema.fields) {
       const desc = this.schema.fields[field];
@@ -183,10 +183,10 @@ class LabelInterface {
           elem = $("#templates").find("#multiclass").clone();
           const bindings = desc.bindings;
 
-          for (let value of desc.values) { 
+          for (let value of desc.values) {
             const btn = $("<button type='button' class='btn btn-outline-primary'>").text(value);
             // Check selected.
-            if (ann != null && 
+            if (ann != null &&
                 ann[field] != null) {
                 if (ann[field] == value) {
                   btn.addClass("active");

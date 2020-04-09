@@ -1,4 +1,4 @@
-// Utility functions
+// region: Utility functions
 function resize(obj) {
   obj.style.height = obj.contentWindow.document.body.scrollHeight + 'px';
 }
@@ -16,6 +16,124 @@ function addInputGroup(label, input) {
   if (label !== undefined) ret.append(label);
   ret.append(input);
   return ret;
+}
+// endregion
+
+/**
+ * ViewInterface renders multiple widgets in the main block and allows users to
+ * select which range of widgets to render through the nav-bar
+ */
+class ViewInterface {
+  /**
+   * Constructs a view interface
+   * @param elem - the root element to draw the interface in
+   * @param nav - the navbar element
+   */
+  constructor(elem, nav, rangeCount) {
+    if (rangeCount == null) rangeCount = 10;
+
+    this.elem = $(elem);
+    this.nav = $(nav);
+    // The range of elements to render.
+    this.range = [0, rangeCount];
+    // The total number of elements.
+    this.count = 0;
+  }
+
+  init() {
+    // Hook up callbacks.
+    this._setupCallbacks();
+    this.updateCount();
+
+    const [lower, upper] = this.range;
+    const count = upper - lower;
+    this.updateRange(lower, count);
+  }
+
+  _setupCallbacks() {
+    const self = this;
+    this.nav.find("#nav-prev").on("click", () => self.prev());
+    this.nav.find("#nav-next").on("click", () => self.next());
+    this.nav.find("#nav-range").on("change", (evt) => {
+      const value = evt.target.value;
+      const parts = value.split("-");
+      console.assert(parts === 2);
+      const [lower, upper] = [Number.parseInt(parts[0])-1, Number.parseInt(parts[1])];
+      const count = upper - lower;
+      self.updateRange(lower, count);
+    });
+
+    $('body').on("keydown", evt => {
+      console.log(evt.key);
+      if (evt.key === "ArrowLeft") self.prev();
+      else if (evt.key === "ArrowRight") self.next();
+    });
+  }
+
+  next() {
+    const self = this;
+    const [lower, upper] = self.range;
+    const count = upper - lower;
+    const newUpper = Math.min(self.count, upper+count);
+    self.updateRange(Math.max(0, newUpper-count), count);
+  }
+  prev() {
+    const self = this;
+    const [lower, upper] = self.range;
+    const count = upper - lower;
+    const newLower = Math.max(0, lower - count);
+    self.updateRange(newLower, count);
+  }
+
+
+  updateCount() {
+    // Set up count in nav interface.
+    const self = this;
+    $.ajax({
+      url: "/count/",
+      contentType: "application/json",
+      method: "GET",
+      success: function(data) {
+        // Clear root.
+        self.count = data.value;
+        self.nav.find("#nav-count").text("of " + self.count);
+      }
+    });
+  }
+
+  renderTemplate(idx, body) {
+    const ret = $("#templates").find("div.card").clone();
+    ret.attr("id", "obj-" + idx);
+    ret.find("h6.card-header").text("Element: " + (idx+1));
+    ret.find("div.card-body").html(body);
+
+    return ret;
+  }
+
+  updateRange(start, count) {
+    const self = this;
+    // Handle arguments.
+    if (count == null) count = 10;
+    if (start == null) start = 0;
+
+    // Get renderables from the server.
+    $.ajax({
+      url: "/render/",
+      contentType: "application/json",
+      method: "GET",
+      data: {start: start, count: count},
+      success: function(data) {
+        // Clear root.
+        self.elem.empty();
+        for (let i = 0; i < data.html.length; i++)  {
+          const html = self.renderTemplate(start + i, data.html[i]);
+          self.elem.append(html);
+        }
+        self.nav.find("#nav-range").val((start+1) + "-" + (start+count));
+        self.range = [start, start+count];
+      }
+    });
+  }
 }
 
 // Widgets
@@ -159,7 +277,7 @@ class MultiLabelWidget {
   }
 
   choices(fn) {
-    let self = this; 
+    let self = this;
     if (this._dirty) {
       // delegate back to autocomplete, but extract the last term
       $.ajax({
@@ -251,7 +369,7 @@ class ProgressBar {
   handleChange(evt) {
     this.listeners.forEach(listener => listener(Number.parseInt(evt.target.value)));
   }
-  
+
   elem() {
     return $("#progress");
   }
@@ -269,31 +387,65 @@ class ProgressBar {
   }
 }
 
-class LabelInterface {
-  constructor(schema) {
-    this.progress = new ProgressBar();
-    this.submit = new Button("Next", true);
+class LabelInterface extends ViewInterface {
+  /**
+   * Constructs a view interface
+   * @param elem - the root element to draw the interface in
+   * @param annotations - the root element to draw the annotation widgets in
+   * @param nav - the navbar element
+   */
+  constructor(elem, annotations, nav) {
+    super(elem, nav, 1);
+    this.annotations = $(annotations);
+  }
 
-    this.widgets = [];
-    for (let key of Object.keys(schema)) {
-      if (schema[key].type === "multilabel") {
-        this.widgets.push(new MultiLabelWidget(key));
-      } else if (schema[key].type === "text") {
-        this.widgets.push(new TextWidget(key));
-      } else {
-        console.error("Could not add widget for type " + schema[key].type);
+  init() {
+    // Hook up callbacks.
+    this.updateSchema();
+    super.init();
+  }
+
+  // TODO: Change load hooks
+  // TODO: Change save hooks
+  // TODO: Add change listeners.
+
+  renderSchemaElement(key, elem) {
+    // Figure out which schema element we should use.
+    const ret = $("#templates").find(`div.annotation-${elem["type"]}`).clone();
+    ret.attr("id", `annotation-${key}`);
+    ret.find("label").text(key);
+
+    return ret;
+  }
+
+  updateSchema() {
+    const self = this;
+    $.ajax({
+      url: "/schema/",
+      contentType: "application/json",
+      method: "GET",
+      success: function(schema) {
+        // Clear our widgets
+        self.widgets = {};
+        const body = self.annotations.find("div.card-body");
+
+        // Clear the body field;
+        body.html("");
+        for (let key of Object.keys(schema)) {
+          const elem = self.renderSchemaElement(key, schema[key]);
+          if (schema[key].type === "classification") {
+            self.widgets[key].push(new ClassificationWidget(elem));
+          } else if (schema[key].type === "text") {
+            self.widgets[key].push(new TextWidget(elem));
+          } else {
+            console.error("Could not add widget for type " + schema[key].type);
+          }
+          body.append(elem);
+        }
       }
-    }
-
-    let self = this;
-    // Hook up progress bar to change document.
-    this.progress.listeners.push(idx => {
-      self.setIdx(idx);
     });
-
-    // Hook up next button to submit data on completion and then update
-    // the scroll bar.
-    this.submit.listeners.push(submit => {
+    return;
+    self.submit.listeners.push(submit => {
       if (!submit) return;
 
       let blob = {};
@@ -316,56 +468,4 @@ class LabelInterface {
       });
     });
   }
-
-  setIdx(idx) {
-    let self = this;
-
-    this.progress.limit(lim => {
-      if (idx <= lim) {
-        $('input#progress').val(idx);
-        $('span#progress-idx').text(idx);
-        $('iframe').attr("src", "/_/" + (idx-1));
-
-        $.ajax({
-          url: "/get/" + (idx-1),
-          method: "get",
-          dataType: "json",
-          success: data => {
-            for (let widget of self.widgets) {
-              if (data[widget.name]) {
-                widget.setValue(data[widget.name]);
-              } else {
-                widget.clear();
-              }
-            }
-          },
-        });
-      } else {
-        console.warn("Tried to cross last possible index.");
-      }
-    });
-  }
-
-  attach(fn) {
-    if ($("#interface").length > 0) {
-      console.log("#interface already attached");
-      return;
-    }
-    let node = $("<div id='interface'></div>");
-    this.progress.attach(widget => node.append(widget));
-    for (let widget of this.widgets) {
-      widget.attach(widget => node.append(widget));
-    }
-    this.submit.attach(widget => node.append(widget));
-
-    fn(node);
-  }
-}
-
-function fex_init(root, schema) {
-  let interface = new LabelInterface(schema);
-  interface.attach(node => root.append(node));
-  interface.setIdx(1);
-
-  $('iframe').on('load', evt => resize(evt.target));
 }

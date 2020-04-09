@@ -1,0 +1,52 @@
+# FastEx configuration
+
+# Specifies a Jinja2 template to render each object in your data file.
+# The template is provided the field `obj` as input,
+template: |
+    <h1>Obj #{{obj.id}}</h1>
+    <hr />
+
+    {% for key, value in obj.items() recursive %}
+    {% set outer_loop = loop %}
+    <div class="card bg-primary text-white mb-1 w-auto">
+      <div class="card-header"> {{key}} </div>
+      {% if value is iterable and value is not mapping and value is not string %}
+      <ul class="list-group list-group-flush">
+        {% for value_ in value recursive %}
+        <li class="list-group-item"> 
+          {% if value_ is mapping %}
+          <div class="card-columns">
+            {{ outer_loop(value_.items()) }}
+          </div>
+          {% else %}
+          {{value_}}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="card-body"> 
+        {% if value is mapping %}
+        <div class="card-columns">
+          outer_loop(value)
+        </div>
+        {% else %}
+        {{value}}
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    </div>
+schema:
+    intent:
+        type: "classification"
+        values:
+            - name: "A"
+              hotkey: "j"
+            - name: "B"
+              hotkey: "k"
+            - name: "none"
+              hotkey: " "
+        notes: 
+            type: "text"

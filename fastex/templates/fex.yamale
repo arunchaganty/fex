@@ -1,0 +1,46 @@
+# vim ft: yaml
+# A YAML schema for fex configurations
+
+# Every configuration should have a template string that describes how
+# objects should be rendered
+template: str(required=True)
+# Configurations can specify one or more annotation schemas
+schema: map(include('classification'), include('text'), include('highlight'), required=False)
+
+---
+# Classification schemas allow the user to pick from one of a set of values. 
+classification:
+    type: enum("classification")
+    # Schemas can either be 'multiclass' (allow exactly one) or 'multilabel'
+    # (allow more than one). Defaults to 'multiclass'
+    mode: enum("multiclass", "multilabel", required=False)
+    # Values consist of one or more class labels
+    values: list(include('class-label'))
+# Classification label schema
+class-label:
+    # The name to display
+    name: str()
+    # The value to store when this option is selected. If absent, we will store
+    # 'name'
+    value: str(required=False)
+    # If provided, we will use this character as a hotkey for this option.
+    hotkey: str(min=1, max=1, exclude='\t', required=False)
+# Text entry schema
+text:
+    type: enum("text")
+    # Text entries can either be 'short' (rendered as an <input>) or 'long'
+    # (rendered as a <textbox>). Default to short
+    mode: enum("short", "long", required=False)
+    # If provided, we will attempt to validate the provided input using regex
+    regex-validation: str(required=False)
+    # If provided, we will attempt to validate the provided input using a BNF
+    # grammar. In particular, the provided grammar should be provided in as
+    # a 'lark' grammar.
+    bnf-validation: str(required=False)
+# Highlight entry schema
+highlight:
+    type: enum("highlight")
+    # The minimum number of highlights required for this field (default is 1)
+    min: int(required=False)
+    # The maximum number of highlights required for this field (default is None)
+    max: int(required=False)

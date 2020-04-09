@@ -12,7 +12,7 @@
 
 <div id="templates" hidden>
   <div class="card">
-    <div class="card-header"></div>
+    <h6 class="card-header"></h6>
     <div class="card-body"></div>
   </div>
 </div>
@@ -34,111 +34,11 @@
 {% endblock %}
 
 {% block extrajs %}
+<script type="text/javascript" src="/static/fex.js"></script>
 <script type="text/javascript">
-class ViewInterface {
-  constructor(elem, nav) {
-    this.elem = $(elem);
-    this.nav = $(nav);
-    this.range = [0, 10];
-    this.count = 0;
-  }
-  init() {
-    // Hook up callbacks.
-    this._setupCallbacks();
-    this.updateCount();
-    this.updateRange();
-  }
-
-  _setupCallbacks() {
-    const self = this;
-    $("#nav-prev").on("click", () => self.prev());
-    $("#nav-next").on("click", () => self.next());
-    $("#nav-range").on("change", (evt) => {
-      const value = evt.target.value;
-      const parts = value.split("-");
-      console.assert(parts == 2);
-      const [lower, upper] = [Number.parseInt(parts[0])-1, Number.parseInt(parts[1])];
-      const count = upper - lower;
-      self.updateRange(lower, count);
-    });
-
-    $('body').on("keydown", evt => {
-      console.log(evt.key);
-      if (evt.key === "ArrowLeft") self.prev();
-      else if (evt.key === "ArrowRight") self.next();
-    });
-  }
-
-  next() {
-    const self = this;
-    const [lower, upper] = self.range;
-    const count = upper - lower;
-    const newUpper = Math.min(self.count, upper+count);
-    self.updateRange(Math.max(0, newUpper-count), count);
-  }
-  prev() {
-    const self = this;
-    const [lower, upper] = self.range;
-    const count = upper - lower;
-    const newLower = Math.max(0, lower - count);
-    self.updateRange(newLower, count);
-  }
-
-
-  updateCount() {
-    // Set up count in nav interface.
-    const self = this;
-    $.ajax({
-      url: "/count/",
-      contentType: "application/json",
-      method: "GET",
-      success: function(data) {
-        // Clear root.
-        self.count = data.value;
-        const nav_count = $("#nav-count");
-        nav_count.text("of " + self.count);
-      }
-    });
-  }
-
-  renderTemplate(idx, body) {
-    const ret = $("#templates").find("div.card").clone();
-    ret.attr("id", "obj-" + idx);
-    ret.find("div.card-header").text("Element: " + (idx+1));
-    ret.find("div.card-body").html(body);
-
-    return ret;
-  }
-
-  updateRange(start, count) {
-    const self = this;
-    // Handle arguments.
-    if (count == null) count = 10;
-    if (start == null) start = 0;
-
-    // Get renderables from the server.
-    $.ajax({
-      url: "/render/",
-      contentType: "application/json",
-      method: "GET",
-      data: {start: start, count: count},
-      success: function(data) {
-        // Clear root.
-        self.elem.empty();
-        for (let i = 0; i < data.html.length; i++)  {
-          const html = self.renderTemplate(start + i, data.html[i]);
-          self.elem.append(html);
-        }
-        $("#nav-range").val((start+1) + "-" + (start+count));
-        self.range = [start, start+count];
-      }
-    });
-  }
-}
-
-// Only global variable -- for console debugging.
-var ui = new ViewInterface(document.getElementById('root'));
-ui.init();
+  // Only global variable -- for console debugging.
+  var ui = new ViewInterface($("#root"), $("nav"));
+  ui.init();
 </script>
 
 {% endblock %}

@@ -1,192 +1,78 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Turk experiment helper.
-"""
-import os
-import time
-import sys
-import pdb
-import json
-import shutil
-import logging
-from collections import defaultdict
-import webbrowser
-import threading
-import _thread as thread
+Fast Explore.
 
-import bottle
-from bottle import Bottle, jinja2_view, static_file, abort
+Fastex (or fex) helps you quickly visualize and annotate structured data in
+JSONL format. To get started, simply run:
+
+    `fex view <file.jsonl>`
+
+which will launch a local web-server to view each object in `<file.jsonl>`.
+
+Customizing the visualization is easy: running `fex init` will install a local
+'fex.yaml' file which contains a 'template' field that can be edited as
+arbitrary HTML. By default, we import Bootstrap4 to style the page.
+
+Finally, if you would like to label data, simply describe its schema in
+`fex.yaml`.
+"""
+import logging
+import os
+import shutil
+import sys
+
+import yamale
+from bottle import abort
+from fastex.config import Config
+from fastex.server import serve
 from jinja2 import Template
 
-from .util import save_jsonl, load_jsonl, FileBackedJson, FileBackedJsonList
-from .search import find_record_indices
+from .util import load_jsonl, FileBackedJsonList
 
 logger = logging.getLogger(__name__)
 
-
-def prune_empty(lst):
-    return [elem for elem in lst if elem]
-
-
-def validate_annotation(schema, ann):
-    for key, value in ann.items():
-        if key not in schema["fields"]:
-            abort(400, f"Invalid field provided {key}")
-        # TODO: Further type validation.                
-
-
-class _FileCheckerThread(threading.Thread):
-    """
-    Interrupt main-thread as soon as any of the given files have
-    changed.
-    """
-
-    def __init__(self, files_to_check, interval=1):
-        threading.Thread.__init__(self)
-        self.daemon = True
-        self.files_to_check = files_to_check
-        self.interval = interval
-        #: Is one of 'reload', 'error' or 'exit'
-        self.status = None
-
-    def run(self):
-        exists = os.path.exists
-        mtime = lambda p: os.stat(p).st_mtime
-        files = {path: mtime(path)
-                for path in self.files_to_check
-                if path and exists(path)}
-
-        # check in a loop
-        while not self.status:
-            for path, lmtime in list(files.items()):
-                if not exists(path) or mtime(path) > lmtime:
-                    self.status = 'reload'
-                    thread.interrupt_main()
-                    break
-            time.sleep(self.interval)
-
-    def __enter__(self):
-        self.start()
-
-    def __exit__(self, exc_type, *_):
-        if not self.status: self.status = 'exit'  # silent exit
-        self.join()
-        return exc_type is not None and issubclass(exc_type, KeyboardInterrupt)
-
-
-def serve(data, template=None, port=8080, schema=None):
-    TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
-    STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-    if not template:
-        template = os.path.join(TEMPLATE_DIR, "template.html")
-    # Inititalize template
-    with open(template) as f:
-        _template = Template(f.read())
-
-    # Start server.
-    app = Bottle()
-
-    # External endpoints
-
-    @app.get('/static/<path:path>')
-    def static(path):
-        return static_file(path, STATIC_DIR)
-
-    @app.get('/view/')
-    @app.get('/')
-    @jinja2_view('view.html', template_lookup=[TEMPLATE_DIR])
-    def view():
-        return {}
-    
-    @app.get('/label/')
-    @jinja2_view('label.html', template_lookup=[TEMPLATE_DIR])
-    def label():
-        return {}
-
-
-    # API
-    #@app.get('/autocomplete/')
-    #def autocomplete():
-    #    name = bottle.request.GET.get("name")
-
-    #    bottle.response.content_type = 'application/json'
-    #    ret = []
-    #    if name in schema and schema[name].get("type") in ["multiclass", "multilabel"]:
-    #        ret = sorted(schema[name]["values"])
-    #    print(ret)
-    #    return json.dumps(ret)
-    @app.get('/count/')
-    def count():
-        return {"value": len(data)}
-    
-    @app.get('/schema/')
-    def get_schema():
-        return schema.obj
-
-    @app.get('/render/')
-    def render():
-        start = int(bottle.request.query.get("start", 0))
-        count = int(bottle.request.query.get("count", 10))
-        if start > len(data):
-            abort(400, "No more data")
-        return {
-                "html": [_template.render(obj=obj) for obj in data[start: start+count]],
-                "obj": data[start: start+count],
-                }
-
-    @app.post('/update/<idx:int>/')
-    def update(idx):
-        obj = bottle.request.json
-
-        # Some server-side validation
-        for key in obj:
-            if key == "_fex": continue
-            if obj[key] != data[idx][key]:
-                abort(400, "Provided response has an object that does not correspond to this idx")
-        validate_annotation(schema, obj["_fex"])
-
-        data[idx] = obj
-        return {}
-
-    # TODO: reimplement search
-    # @app.get('/search/<query>')
-    # @app.post('/search/')
-    # def search(query=None):
-    #     if query is None:
-    #         query_obj = bottle.request.json
-    #         query = query_obj.get('query')
-    #     results = find_record_indices(data, query, query_schema)
-    #     bottle.response.content_type = 'application/json'
-    #     return json.dumps(results)
-
-    #webbrowser.open_new_tab('http://localhost:{}'.format(port))
-    # Spawn a custom file watcher
-    if os.environ.get('BOTTLE_CHILD'):
-        bgcheck = _FileCheckerThread([template, schema.fname], 1)
-        with bgcheck:
-            app.run(reloader=True, port=port, debug=True)
-        if bgcheck.status == 'reload':
-            sys.exit(3)
-    else:
-        app.run(reloader=True, port=port, debug=True)
-    data.save()
+#: The path to the fastex package directory
+_mypath = os.path.dirname(__file__)
 
 
 def do_init(args):
-    for f in ["template.html", "schema.json"]:
-        shutil.copy(os.path.join(os.path.dirname(__file__), "templates", f), f)
+    """
+    Initialize a FastEx configuration
+
+    This command will create a 'fex.yaml' file in the current directory that can be used to
+    configure FastEx.
+    """
+    if os.path.exists("fex.yaml") and not args.force:
+        logger.error("A 'fex.yaml' file already exists in this directory. Run 'fex init -f' "
+                     "if you would like to overwrite it with the default file.")
+        sys.exit(1)
+    shutil.copy(os.path.join(_mypath, "templates", "fex.yaml"), "fex.yaml")
+    logger.info("A fex configuration file has been copied to 'fex.yaml'. Edit it to change the "
+                "template used to render objects and the annotation schema")
+
 
 def do_serve(args):
+    """
+    Start the FastEx webserver
+    """
     # 0. Find experiment dir.
+    if os.path.exists("fex.yaml"):
+        config = Config.load("fex.yaml")
+    else:
+        config = Config.load(os.path.join(_mypath, "templates", "fex.yaml"))
+
     data = FileBackedJsonList(args.input, auto_save=False)
     # TODO: save a backup
     logger.info("Serving %d inputs ", len(data))
-    schema = FileBackedJson(args.schema)
 
-    serve(data, template=args.template, port=args.port, schema=schema)
+    serve(data, config, port=args.port)
+
 
 def do_export(args):
+    """
+    Renders the provided input to individual HTML files
+    """
     # 0. Find experiment dir.
     data = load_jsonl(args.input)
     logger.info("Saving %d inputs ", len(data))
@@ -202,39 +88,40 @@ def do_export(args):
         with open(os.path.join(args.output, "{}.html".format(i)), "w") as f:
             f.write(template.render(obj=obj))
 
-def main():
-    logging.basicConfig(level=logging.INFO)
 
+def main():
     import argparse
-    parser = argparse.ArgumentParser(description='tex.py: a tool to manage Amazon Mechanical Turk experiments')
-    #parser.add_argument('-C', '--config', default='config.json', type=JsonFile("r"), help="Global configuration json file.")
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--log-level', choices=["debug", "info", "warn", "error"], default="info",
+                        help="The granularity of logs to report")
     parser.set_defaults(func=None)
 
     subparsers = parser.add_subparsers()
-    command_parser = subparsers.add_parser('init', help='Initialize a new experiment of a particular type')
+    command_parser = subparsers.add_parser('init', help=do_init.__doc__)
+    command_parser.add_argument('-f', '--force', action="store_true",
+                                help="If set, this script will overwrite an existing fex.yaml")
     command_parser.set_defaults(func=do_init)
 
-    command_parser = subparsers.add_parser('serve', help='Label an experiment')
-    command_parser.add_argument('-i', '--input', type=str, default="data.jsonl", help="Data file with a list of JSON lines")
-    command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
-    command_parser.add_argument('-s', '--schema', type=str, default="schema.json", help="Template file to write")
-    command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
-    command_parser.set_defaults(func=do_serve)
-
-
-    command_parser = subparsers.add_parser('export', help='Saves the rendered pages')
-    command_parser.add_argument('-i', '--input', type=argparse.FileType("r"), default="data.jsonl", help="Data file with a list of JSON lines")
-    command_parser.add_argument('-t', '--template', type=str, default="template.html", help="Template file to write")
-    command_parser.add_argument('-o', '--output', type=str, default="rendered", help="Output directory containing the rendered HTML.")
+    command_parser = subparsers.add_parser('export', help=do_export.__doc__)
+    command_parser.add_argument('-o', '--output', type=str, default="rendered",
+                                help="Output directory to save the rendered HTML to.")
+    command_parser.add_argument('input', type=str, help="Path to the data file in JSONL format")
     command_parser.set_defaults(func=do_export)
 
+    command_parser = subparsers.add_parser('run', help=do_serve.__doc__)
+    command_parser.add_argument('-p', '--port', type=int, default=8080, help="Port to use")
+    command_parser.add_argument('input', type=str, help="Path to the data file in JSONL format")
+    command_parser.set_defaults(func=do_serve)
 
     args = parser.parse_args()
     if args.func is None:
         parser.print_help()
         sys.exit(1)
     else:
+        logging.basicConfig(level=args.log_level.upper())
         args.func(args)
+
 
 if __name__ == "__main__":
     main()

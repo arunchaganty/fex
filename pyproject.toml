@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "fastex"
+version = "0.2.0"
+description = "Fastex (or fex) helps you quickly visualize and annotate structured data in JSONL format."
+authors = ["Arun Tejasvi Chaganty <chaganty@cs.stanford.edu>"]
+license = "MIT"
+readme = "README.rst"
+repository = "https://github.com/arunchaganty/fex"
+homepage = "https://github.com/arunchaganty/fex"
+
+[tool.poetry.dependencies]
+python = "^3.7"
+toml = "^0.9"
+jinja2 = "^2.10"
+tqdm = "^4.32"
+bottle = "^0.12"
+pyyaml = "^5.1"
+sphinx = "^2.4.4"
+readthedocs-sphinx-ext = "^1.0.1"
+sphinx_rtd_theme = "^0.4.3"
+yamale = "^2.0.1"
+lark-parser = "^0.8.5"
+
+[tool.poetry.dev-dependencies]
+pytest = "^3.0"
+pytest-cov = "^2.4"
+mypy = "^0.720.0"
+
+[tool.poetry.scripts]
+fex = 'fastex.main:main'
+
+[build-system]
+requires = ["poetry>=1.0"]
+build-backend = "poetry.masonry.api"
+
+[extras]
